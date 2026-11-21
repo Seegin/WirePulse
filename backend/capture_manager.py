@@ -23,6 +23,7 @@ from collections import Counter, defaultdict, deque
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .demo_generator import build_demo_dataset
+from .direct_pcap import DirectPcapLoader, _PcapPktHdr, _PcapStat
 from .dissector.engine import ProtocolDissector
 from .dissector.models import PacketRecord
 from .filter_engine import compile_filter, validate_filter
@@ -65,10 +66,11 @@ class _WPCaptureStats(ctypes.Structure):
 
 
 class NativePcapEngine:
-    """Thin ctypes wrapper around our C11 libwirepulse_pcap shared library."""
+    """Wrapper around our C11 libwirepulse_pcap shared library with direct wpcap/libpcap fallback."""
 
     def __init__(self, project_root: str) -> None:
         self.lib: Optional[ctypes.CDLL] = None
+        self.direct: Optional[DirectPcapLoader] = None
         self.version: str = "unavailable"
         self.load_error: Optional[str] = None
         self._load(project_root)
@@ -117,13 +119,22 @@ class NativePcapEngine:
             except Exception as e:
                 self.load_error = str(e)
 
+        # Fallback: direct ctypes binding to Npcap wpcap.dll / libpcap.so
+        direct = DirectPcapLoader()
+        if direct.available:
+            self.direct = direct
+            self.version = direct.version
+            self.load_error = None
+        elif not self.load_error:
+            self.load_error = direct.error
+
     @property
     def available(self) -> bool:
-        return self.lib is not None
+        return self.lib is not None or (self.direct is not None and self.direct.available)
 
     def list_interfaces(self) -> List[Dict[str, Any]]:
         if not self.lib:
-            return []
+            return self.direct.list_interfaces() if self.direct else []
         arr = (_WPIfaceInfo * 64)()
         err = ctypes.create_string_buffer(256)
         n = self.lib.wp_list_interfaces(arr, 64, err, 256)
@@ -159,7 +170,7 @@ class NativePcapEngine:
         if not expr:
             return {"valid": True, "error": None}
         if not self.lib:
-            return {"valid": True, "error": None, "note": "Native BPF compiler unavailable"}
+            return self.direct.validate_bpf(expr) if self.direct else {"valid": True, "error": None}
         err = ctypes.create_string_buffer(256)
         rc = self.lib.wp_validate_bpf(expr.encode("utf-8"), DLT_EN10MB, err, 256)
         if rc == 0:
@@ -476,9 +487,14 @@ class CaptureManager:
     def _start_native_capture(
         self, iface_name: str, bpf_filter: str, promisc: bool, snaplen: int, buffer_mb: int
     ) -> Dict[str, Any]:
-        if not self.native.available or not self.native.lib:
-            return {"ok": False, "error": f"Native C11 libpcap engine unavailable: {self.native.load_error}"}
+        if not self.native.available:
+            return {"ok": False, "error": f"Native libpcap/Npcap engine unavailable: {self.native.load_error}"}
 
+        # Path B: Direct wpcap.dll / libpcap.so fallback (e.g., Windows without compiled DLL)
+        if not self.native.lib and self.native.direct and self.native.direct.lib:
+            return self._start_direct_pcap_capture(iface_name, bpf_filter, promisc, snaplen, buffer_mb)
+
+        assert self.native.lib is not None
         err = ctypes.create_string_buffer(512)
         sess = self.native.lib.wp_open_live(
             iface_name.encode("utf-8"),
@@ -550,6 +566,65 @@ class CaptureManager:
         self._capture_thread.start()
         return {"ok": True, "status": self.get_status_snapshot()}
 
+    def _start_direct_pcap_capture(
+        self, iface_name: str, bpf_filter: str, promisc: bool, snaplen: int, buffer_mb: int
+    ) -> Dict[str, Any]:
+        direct = self.native.direct
+        assert direct is not None and direct.lib is not None
+        handle, err_msg = direct.open_live(iface_name, snaplen, promisc, 50, buffer_mb, bpf_filter)
+        if not handle:
+            return {"ok": False, "error": err_msg or "Failed to open Npcap/libpcap handle"}
+
+        self._native_sess = handle
+        self.capturing = True
+        self.paused = False
+        self.active_engine = f"Native Npcap/libpcap ({direct.version})"
+        self.active_interface = iface_name
+        self.processes.set_windows_bridge(False)
+        self.processes.start_background_refresh(2.0)
+
+        def _worker() -> None:
+            lib = direct.lib
+            assert lib is not None
+            dlt = lib.pcap_datalink(handle)
+            hdr_ptr = ctypes.POINTER(_PcapPktHdr)()
+            data_ptr = ctypes.POINTER(ctypes.c_uint8)()
+            st = _PcapStat()
+            last_stat_t = time.monotonic()
+            try:
+                while not self._stop_evt.is_set():
+                    rc = lib.pcap_next_ex(handle, ctypes.byref(hdr_ptr), ctypes.byref(data_ptr))
+                    if rc == 1 and hdr_ptr and data_ptr:
+                        h = hdr_ptr.contents
+                        raw = ctypes.string_at(data_ptr, h.caplen)
+                        ts = float(h.ts.tv_sec) + float(h.ts.tv_usec) / 1_000_000.0
+                        self._ingest_raw_packet(
+                            RawPacket(timestamp=ts, caplen=h.caplen, origlen=h.len, linktype=dlt, data=raw)
+                        )
+                    elif rc == 0:
+                        pass
+                    else:
+                        break
+                    now = time.monotonic()
+                    if now - last_stat_t >= 1.0:
+                        last_stat_t = now
+                        if lib.pcap_stats(handle, ctypes.byref(st)) == 0:
+                            self.kernel_stats = {
+                                "recv": int(st.ps_recv),
+                                "drop": int(st.ps_drop),
+                                "ifdrop": int(st.ps_ifdrop),
+                            }
+            finally:
+                lib.pcap_close(handle)
+                self._native_sess = None
+                self.capturing = False
+                self.processes.stop_background_refresh()
+                self._broadcast({"type": "status", "status": self.get_status_snapshot()})
+
+        self._capture_thread = threading.Thread(target=_worker, daemon=True, name="wp-direct-pcap")
+        self._capture_thread.start()
+        return {"ok": True, "status": self.get_status_snapshot()}
+
     def _start_dumpcap_capture(
         self, dumpcap_idx: str, bpf_filter: str, promisc: bool, snaplen: int, buffer_mb: int
     ) -> Dict[str, Any]:
@@ -561,8 +636,9 @@ class CaptureManager:
             "-i", dumpcap_idx,
             "-s", str(snaplen),
             "-B", str(max(2, min(buffer_mb, 64))),
+            "-F", "pcap",
+            "-q",
             "-w", "-",
-            "-P",  # Classic PCAP stream for minimal parsing overhead
         ]
         if not promisc:
             cmd.append("-p")
@@ -570,7 +646,7 @@ class CaptureManager:
             cmd.extend(["-f", bpf_filter])
 
         try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
         except Exception as e:
             return {"ok": False, "error": f"Failed to launch dumpcap: {e}"}
 
@@ -613,9 +689,12 @@ class CaptureManager:
 
     def stop_capture(self) -> Dict[str, Any]:
         self._stop_evt.set()
-        if self._native_sess and self.native.lib:
+        if self._native_sess:
             try:
-                self.native.lib.wp_break(self._native_sess)
+                if self.native.lib:
+                    self.native.lib.wp_break(self._native_sess)
+                elif self.native.direct and self.native.direct.lib:
+                    self.native.direct.lib.pcap_breakloop(self._native_sess)
             except Exception:
                 pass
         if self._dumpcap_proc:
