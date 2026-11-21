@@ -103,6 +103,11 @@ def md_inline_to_html(text: str) -> str:
     text = re.sub(r"\*([^*]+)\*", r"<em>\1</em>", text)
     for i, span in enumerate(code_spans):
         text = text.replace(f"\x00CODE{i}\x00", span)
+    text = re.sub(
+        r"(https://[^\s<`\"']+)",
+        r'<a href="\1" style="color:#0369a1;text-decoration:none;font-weight:600;">\1</a>',
+        text,
+    )
     return text
 
 
@@ -139,6 +144,7 @@ def build_html(md_text: str) -> str:
     in_table = False
     table_rows = []
     inserted_arch = False
+    fig_counter = 0
 
     def flush_lists():
         nonlocal in_ul, in_ol
@@ -206,13 +212,14 @@ def build_html(md_text: str) -> str:
             alt, rel = img_m.group(1), img_m.group(2)
             abs_img = (DOCS_DIR / rel).resolve()
             if not inserted_arch:
-                html_parts.append(f'<figure class="fig">{ARCH_SVG}<figcaption>图 1：WirePulse 三层混合架构与 Wireshark 增量协同数据流图</figcaption></figure>')
+                fig_counter += 1
+                html_parts.append(
+                    f'<figure class="fig">{ARCH_SVG}<figcaption>图 {fig_counter}：WirePulse 三层混合架构与 Wireshark 增量协同数据流图</figcaption></figure>'
+                )
                 inserted_arch = True
-                fig_num = 2
-            else:
-                fig_num = 3
+            fig_counter += 1
             html_parts.append(
-                f'<figure class="fig"><img src="file://{abs_img}" alt="{alt}"/><figcaption>图 {fig_num}：{alt}</figcaption></figure>'
+                f'<figure class="fig"><img src="file://{abs_img}" alt="{alt}"/><figcaption>图 {fig_counter}：{alt}</figcaption></figure>'
             )
             continue
 
@@ -258,7 +265,7 @@ def build_html(md_text: str) -> str:
 <style>
   @page {{
     size: A4;
-    margin: 18mm 16mm 18mm 16mm;
+    margin: 15.5mm 15mm 15.5mm 15mm;
     @bottom-center {{
       content: "WirePulse — 《软件与系统安全》实验 1A 报告  ·  第 " counter(page) " / " counter(pages) " 页";
       font-family: "Noto Sans CJK SC", sans-serif;
@@ -268,8 +275,8 @@ def build_html(md_text: str) -> str:
   }}
   body {{
     font-family: "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
-    font-size: 9.8pt;
-    line-height: 1.62;
+    font-size: 9.5pt;
+    line-height: 1.56;
     color: #1e293b;
   }}
   .title-banner {{
@@ -366,13 +373,16 @@ def build_html(md_text: str) -> str:
   tr:nth-child(even) td {{ background: #fafafa; }}
   hr {{ border: none; border-top: 1px solid #e2e8f0; margin: 12px 0; }}
   .fig {{
-    margin: 12px 0;
+    margin: 10px 0 12px 0;
     text-align: center;
     page-break-inside: avoid;
   }}
   .fig img {{
-    width: 100%;
-    border-radius: 8px;
+    max-width: 100%;
+    max-height: 100mm;
+    width: auto;
+    height: auto;
+    border-radius: 7px;
     border: 1px solid #cbd5e1;
     box-shadow: 0 3px 10px rgba(15, 23, 42, 0.12);
   }}

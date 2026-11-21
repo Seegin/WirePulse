@@ -4,7 +4,8 @@
 **课程**：中国科学院大学（UCAS）《软件与系统安全》（2026 秋）  
 **姓名**：梁献中  
 **学号**：202628015059042  
-**开源仓库地址（Git）**：`https://github.com/Seegin/WirePulse`  
+**开源仓库地址（Git · Public）**：https://github.com/Seegin/WirePulse  
+**演示视频**：`梁献中_202628015059042_ex1A_play.mp4`（96 秒 1440×900 高清全流程演示）  
 **完成日期**：2026 年 11 月 21 日  
 
 ---
@@ -114,21 +115,28 @@ WirePulse 在 `backend/dissector/dpi.py` 中实现了 **多维度深度包检测
 
 ### 3.5 TCP/UDP 流重组、时序图与 OS 进程归因
 
-- **TCP 流重组与专家诊断（`backend/stream_engine.py`）**：按规范化双向五元组分配 `tcp.stream` 编号；采用 32 位模运算序列号差分检测 **重传（Retransmission）** 与 **乱序（Out-of-Order）**；在 Follow Stream 拼接对话内容时自动去重重传分片，同时保留完整控制帧用于绘制 **交互式 SVG 流时序图**（含毫秒级增量延迟与橙色虚线重传标注）。
+- **TCP 流重组、防乱码呈现与专家诊断（`backend/stream_engine.py`）**：按规范化双向五元组分配 `tcp.stream` 编号；采用 32 位模运算序列号差分检测 **重传（Retransmission）** 与 **乱序（Out-of-Order）**；在 Follow Stream 拼接对话内容时自动去重重传分片，并通过**香农熵（Shannon Entropy）与二进制比例检测**智能识别 TLS/QUIC/SSH 等高熵加密流——自动切换为 Wireshark 标准 16-Byte **Hex Dump**（同时对 `ASCII` / `UTF-8` 模式剔除全部 `U+FFFD` 替换符与 C0/C1 控制字符，彻底消除乱码），并保留完整控制帧用于绘制 **交互式 SVG 流时序图**（含毫秒级增量延迟与橙色虚线重传标注）。
 - **跨平台 OS 进程归因（`backend/process_tracker.py`）**：
   - Linux 下扫描 `/proc/<pid>/fd` 提取 `socket:[inode]` 并与 `/proc/net/{tcp,tcp6,udp,udp6}` 关联，以 TTL 后台线程低开销刷新映射表；
   - Windows 与 WSL2 宿主机桥接模式下通过系统连接表与进程表关联，实测在宿主机物理以太网上成功将实时流量精准归因至 `verge-mihomo.exe (PID 19144)`、`svchost.exe (PID 7636)`、`msedge.exe (PID 16988)`。
 
-### 3.6 基于 Wireshark 的双向增量开发
+![Follow Stream TLS 高熵加密流自动防乱码 Hex Dump 视图](assets/wirepulse_streams_tls.png)
 
-WirePulse 并非简单调用命令行，而是与 Wireshark 4.6.4 实现了深度协同：
+![TCP 交互式 SVG 流时序图（三次握手、RTT、橙色虚线重传与四次挥手）](assets/wirepulse_sequence.png)
+
+### 3.6 基于 Wireshark 的双向增量开发与实时安全 IDS 雷达
+
+WirePulse 并非简单调用命令行，而是与 Wireshark 4.6.4 实现了深度协同，并补齐了原生 Wireshark 欠缺的实时入侵检测能力：
 
 1. **双引擎协议解剖（`sharkd` JSON-RPC 2.0）**：在 Packet Details 栏可一键从自研 `Native OSI` 切换至 `Wireshark`，后端将目标帧（及密钥日志/流上下文）送入 `sharkd` 的 `libwireshark` 核心，直接解析 3,000+ 协议并转换回统一字节偏移树，完美联动 Hex 视图。
 2. **自定义 Wireshark Lua Dissector 插件生成器**：用户可在 WS Lab 页面可视化配置自定义二进制应用层协议（端口、Magic 魔数、字段类型与字节长度），即时生成符合 Wireshark API 规范的 `.lua` 插件并导出加载至上游 Wireshark。
+3. **13 条有状态安全 IDS 威胁雷达（`backend/security_engine.py`）**：紧扣《软件与系统安全》课程主题，实时检测 ARP 欺骗、TCP SYN/XMAS/NULL 隐蔽扫描、SYN Flood、HTTP Basic/表单/FTP 明文凭证泄露、SQLi/XSS/路径遍历、高香农熵 DNS 隧道与弱 TLS 版本/套件，附带 MITRE ATT&CK 映射、原始取证证据及一键跳帧定位。
+
+![WirePulse 实时安全 IDS 威胁雷达（13 条有状态检测规则与取证证据）](assets/wirepulse_security.png)
 
 ### 3.7 面向中文用户与计网初学者的可视化学习工坊（NetLearn Studio）
 
-针对本科《计算机网络》与抓包入门同学面对纯英文 Wireshark 十六进制视图上手门槛高的痛点，WirePulse 在完整保留专业能力的基础上完成了**全中文友好重构（支持一键 `中文 / EN` 双语切换）**，并创新打造了**基于用户自身实时抓包数据驱动的可视化教学工坊**：
+针对本科《计算机网络》与抓包入门同学面对纯英文 Wireshark 十六进制视图上手门槛高的痛点，WirePulse 在完整保留专业能力的基础上完成了**双语架构重构**：**`EN` 模式为 100% 纯英文专业界面**，**`中文` 模式采用符合 Wireshark 使用习惯的自然中英混排**（保留 `Packet List`、`Packet Details`、`Packet Bytes`、`Follow Stream`、`Hex Dump`、`Display Filter` 等行业标准术语，原理与教学指引使用清晰中文），并创新打造了**基于用户自身实时抓包驱动的可视化教学工坊**：
 
 1. **一句话看懂数据包（动态中文解说器）**：自动分析用户选中的任意真实捕获帧，生成自然语言故事卡（如识别出非标端口 8888 上的 HTTP 请求、TCP 三次握手第几步、ARP 局域网广播问询或明文凭证安全隐患）。
 2. **OSI 封装 / 解封装套娃动画**：按真实线路字节占比绘制物理帧切分条，支持**发送端封装（L7 → L2）**与**接收端解封装（L2 → L7）**互动步进与自动动画播放，直观展示每层 PDU 名称、寻址方式（MAC/IP/Port）与首部叠加/剥离过程。
@@ -157,40 +165,58 @@ WirePulse 并非简单调用命令行，而是与 Wireshark 4.6.4 实现了深�
 4. **前端高频跳转与列表滚动同步**：
    - *现象*：在开启实时抓包 Auto-scroll 时，从 Security 告警跳转到历史 Frame #28 后，虚拟列表仍停留在底部。
    - *根治*：区分“新包到达增长触发自动滚底”与“选中帧变化触发视口定位”，实现既不干扰实时监控又精准定位告警帧的体验。
+5. **TLS / 高熵二进制流重组乱码与控制字符方块（`U+FFFD` / `▯`）根治**：
+   - *现象*：在宿主机物理网卡实测抓取 `verge-mihomo.exe` 的 `TLSv1.2` 加密流（32 KB）时，默认 `UTF-8` 解码出现大量替换菱形符（`U+FFFD`）与 C0/C1 不可见控制字符方块，且模式切换按钮出现折行。
+   - *根治*：在 `backend/stream_engine.py` 为每个 Turn 计算香农熵（`entropy`）与二进制判定（`isBinary`），新增标准 Wireshark 可打印 `ascii` 与严格控制字符清洗管道；前端 `StreamView.tsx` 遇到加密/二进制流自动切换为经典 16-Byte `Hex Dump`（附一键导入 `SSLKEYLOGFILE` 入口），并在单元测试 `test_04` 中增加零 `U+FFFD`/控制字符回归断言。
 
 ---
 
-## 5. 编译、部署与测试验证
+## 5. 源码组织、编译部署与测试验证
 
-### 5.1 环境准备与运行
+### 5.1 源码目录结构（对应 `梁献中_202628015059042_ex1A_src/`）
+
+| 目录 / 文件 | 核心职责 |
+|---|---|
+| `wirepulse.py` / `start_windows.bat` / `start_linux.sh` | 跨平台一键启动器（自动加载原生库/Wireshark 并拉起桌面 App 窗口） |
+| `core/capture_engine.{h,c}`、`core/pcap_abi.h`、`core/build.{sh,bat}` | 零头文件依赖 C11 原生 `libpcap`/`Npcap` 捕获动态库与 BPF 编译器 |
+| `core/ebpf/xdp_packet_stats.bpf.c` | 面向高速网络的 Linux eBPF/XDP 驱动层统计与 SYN 监控探针 |
+| `backend/dissector/`（`engine.py`, `dpi.py`, `dns_parser.py`, `tls_ja3.py`, `oui.py`） | 自研 OSI L1–L7 协议剖析引擎（含非标端口 DPI 与 TLS JA3/JA3S 指纹） |
+| `backend/filter_engine.py`、`stream_engine.py`、`process_tracker.py`、`security_engine.py` | 递归下降 Display Filter AST、TCP 流重组/防乱码/时序图、OS PID 归因与 13 条安全 IDS |
+| `backend/wireshark_bridge.py`、`direct_pcap.py`、`capture_manager.py`、`server.py` | Wireshark `sharkd`/`dumpcap`/Lua 桥接、Windows Npcap 直连与 `aiohttp` 异步服务 |
+| `frontend/src/` & `frontend/dist/` | React 18 + TypeScript + Tailwind 现代化 8 视图 GUI（含预构建静态产物，无需 Node 即可直接运行） |
+| `tests/test_backend.py`、`samples/wirepulse_security_lab.pcap` | 8 项端到端自动化单元测试套件与内置安全教学演示捕获包 |
+
+### 5.2 环境准备与一键运行
 
 - **Linux / WSL2**：
   ```bash
-  cd wirepulse
+  cd 梁献中_202628015059042_ex1A_src
   bash core/build.sh          # 编译 C11 libwirepulse_pcap.so（零头文件依赖）
   pip install -r requirements.txt
-  python3 wirepulse.py        # 启动后端服务并自动打开桌面 App 窗口
+  python3 wirepulse.py        # 启动后端服务并自动打开桌面 App 窗口（加 --demo 可预载演示包）
   ```
 - **Windows（判卷环境一键启动）**：
   - 安装 Npcap（可选安装 Wireshark 以启用 `sharkd` 双引擎）；
-  - 双击 `start_windows.bat` 或运行 `python wirepulse.py`，程序将自动加载 `wpcap.dll` / `wirepulse_pcap.dll` 与 Wireshark 工具链并弹出桌面 GUI。
+  - 双击 `start_windows.bat` 或运行 `python wirepulse.py`，程序已内置预编译前端 `frontend/dist/`，自动加载 `wpcap.dll` / `wirepulse_pcap.dll` 与 Wireshark 工具链并弹出桌面 GUI。
 
-### 5.2 自动化与实机端到端验证结果
+### 5.3 自动化与实机端到端验证结果
 
 | 测试项目 | 验证方法 | 实测结果 |
 |---|---|---|
-| **后端单元测试套件** (`python3 tests/test_backend.py`) | 覆盖 C11 libpcap、BPF 编译、OSI 10+ 协议与非标端口 DPI、Display Filter AST、TCP 重传去重与时序、OS 进程映射、13 条 IDS 规则、`sharkd` 双引擎、Lua 生成、PCAP 往返 | **8 / 8 全部通过**（耗时 1.03s） |
+| **后端单元测试套件** (`python3 tests/test_backend.py`) | 覆盖 C11 libpcap、BPF 编译、OSI 10+ 协议与非标端口 DPI、Display Filter AST、TCP 重传去重与 TLS 防乱码、OS 进程映射、13 条 IDS 规则、`sharkd` 双引擎、Lua 生成、PCAP 往返 | **8 / 8 全部通过**（耗时 1.08s） |
 | **Windows 原生 Npcap 实测** (`Python 3.14 + wpcap.dll`) | 直接调用 `Npcap 1.86 (libpcap 1.10.6)` 枚举网卡与编译 BPF | **通过**（成功枚举 11 块 Windows 网卡，正确校验合法/非法 BPF） |
 | **宿主机物理网卡实时嗅探** (`dumpcap` 桥接以太网) | 连续 2.5s 捕获真实流量并触发 OS 进程追踪 + `libwireshark` 解析 | **通过**（实时捕获 **1,101 包 / 848 KB**，识别 `verge-mihomo.exe`、`svchost.exe`、`msedge.exe`） |
-| **全视图 GUI 交互验收** (1440×900 真实浏览器) | 遍历 7 个功能视图、双向 Hex↔树联动、过滤栏 AST、流时序图、拓扑图、深浅双主题 | **通过**（JS Console 错误 `0`，失败 API 请求 `0`） |
+| **全视图 GUI 与双语验收** (1440×900 真实浏览器) | 遍历 8 个主视图、双向 Hex↔树联动、过滤栏 AST、TLS Hex Dump、流时序图、拓扑图、NetLearn、深浅双主题及 `EN` 模式全站 DOM 扫描 | **通过**（JS Console 错误 `0`，失败请求 `0`，`EN` 模式中文字符残留 `0`） |
 
 ---
 
-## 6. 总结与方法论沉淀（Best Practices）
+## 6. 总结、最佳实践与 AI 协同分工
 
 通过本次网络嗅探器与安全分析系统的完整工程实践，提炼出四条网络系统安全软件研发的 **Best Practices**：
 
 1. **捕获与解析解耦、特权最小化**：高权限仅赋予极简捕获层（C11 `libpcap` 或 `dumpcap`），复杂的协议解析、正则检测与 GUI 渲染运行于低权限隔离层，大幅缩小畸形报文引发 RCE/DoS 漏洞的爆炸半径。
 2. **先过滤后拷贝（Push-Down Filtering）**：尽可能将 BPF 规则通过 `pcap_compile`/`pcap_setfilter` 下沉至内核态过滤，减少用户态拷贝与反序列化开销；显示过滤则交由类型安全的 AST 解释器执行，实现“零丢包捕获 + 灵活回溯检索”。
 3. **协议识别不轻信端口，安全检测须有状态且解码规范化**：应用层识别必须优先做载荷特征 DPI；安全检测必须先做 URL/Base64 规范化解码，并跨包维护状态表（ARP IP-MAC 绑定表、SYN 滑动窗口端口集、TCP 序列号区间）才能抵御隐蔽攻击与逃逸变形。
-4. **复用成熟生态，聚焦增量价值**：借助 `sharkd` / `libwireshark` 与 Lua 插件机制对接工业级协议库，将研发精力聚焦于原生 Wireshark 欠缺的 **OS 进程流归因、实时安全 IDS 雷达、可视化时序/拓扑与现代人机交互体验**，实现了 1+1 > 2 的工程效能。
+4. **复用成熟生态，聚焦增量价值**：借助 `sharkd` / `libwireshark` 与 Lua 插件机制对接工业级协议库，将研发精力聚焦于原生 Wireshark 欠缺的 **OS 进程流归因、实时安全 IDS 雷达、防乱码流时序/拓扑、计网可视化学习工坊与现代人机交互体验**，实现了 1+1 > 2 的工程效能。
+
+> **AI 协同研发说明**：遵循课堂关于“人与 AI 合理分工”的建议，系统分层架构选型、C11 `libpcap`/`Npcap` 跨平台 ABI 对齐、OSI 抓包层次边界思考、DPI/AST/IDS 安全规则设计与真机排障验证均由作者主导设计与把关；React/Tailwind 前端交互组件、双语界面打磨与文档排版流程借助 AI 编码助手高效迭代完成。
