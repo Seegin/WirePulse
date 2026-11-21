@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.so
+*.dll
+*.obj
+*.lib
+*.exp
+*.o
+node_modules/
+frontend/dist/
+.pytest_cache/
+*.tmp
+.DS_Store
