@@ -179,10 +179,10 @@ export const PacketDetailsPane: React.FC<Props> = ({
                   onApplyFilter(formatFilterExpr(node.key, node.value))
                 }}
                 className="flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-500/25 cursor-pointer"
-                title={`按此字段过滤: ${formatFilterExpr(node.key, node.value)}`}
+                title={`Filter: ${formatFilterExpr(node.key, node.value)}`}
               >
                 <Filter className="w-2.5 h-2.5" />
-                <span>过滤</span>
+                <span>{t.filterAction}</span>
               </button>
             )}
             <button
@@ -191,7 +191,7 @@ export const PacketDetailsPane: React.FC<Props> = ({
                 navigator.clipboard?.writeText(String(node.value ?? node.label))
               }}
               className="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-slate-100 cursor-pointer"
-              title="复制字段值"
+              title={t.copyValue}
             >
               <Copy className="w-3 h-3" />
             </button>
@@ -216,7 +216,7 @@ export const PacketDetailsPane: React.FC<Props> = ({
           {detail && (
             <span
               className="font-mono-code text-slate-400 truncate hidden xl:inline"
-              title={`帧 #${detail.summary.no}${detail.summary.dpiMethod ? ` · ${detail.summary.dpiMethod}` : ''}`}
+              title={`Frame #${detail.summary.no}${detail.summary.dpiMethod ? ` · ${detail.summary.dpiMethod}` : ''}`}
             >
               #{detail.summary.no}
               {detail.summary.dpiMethod ? ` · ${detail.summary.dpiMethod}` : ''}
@@ -229,10 +229,10 @@ export const PacketDetailsPane: React.FC<Props> = ({
             <button
               onClick={() => onOpenLearn(detail.summary.no)}
               className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/12 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-[10.5px] font-semibold cursor-pointer"
-              title="在计网可视化学习工坊中用 32 位首部位图与 OSI 套娃动画图解此帧"
+              title={lang === 'zh' ? '在计网学习工坊中用 32 位首部位图与 OSI 套娃图解此帧' : 'Visualize in NetLearn Studio (32-bit header & OSI encapsulation)'}
             >
               <GraduationCap className="w-3 h-3" />
-              <span>图解此包</span>
+              <span>{t.learnPacketBtn}</span>
             </button>
           )}
 
@@ -256,7 +256,7 @@ export const PacketDetailsPane: React.FC<Props> = ({
                 ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/35'
                 : 'text-slate-500 border-slate-200 dark:border-slate-700'
             }`}
-            title="开启/关闭点击字段时底部的计网新手中文百科解释"
+            title={lang === 'zh' ? '开启/关闭点击字段时底部的新手百科解释' : 'Toggle protocol field explanation card'}
           >
             <BookOpen className="w-3 h-3" />
             <span>{t.learnCompanion}</span>
@@ -291,14 +291,14 @@ export const PacketDetailsPane: React.FC<Props> = ({
           <button
             onClick={() => expandAll(true)}
             className="px-1 py-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
-            title="全部展开"
+            title={t.expandAll}
           >
             +
           </button>
           <button
             onClick={() => expandAll(false)}
             className="px-1 py-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
-            title="全部折叠"
+            title={t.collapseAll}
           >
             -
           </button>
@@ -310,12 +310,16 @@ export const PacketDetailsPane: React.FC<Props> = ({
         {!detail ? (
           <div className="h-full flex flex-col items-center justify-center text-xs text-slate-400 gap-1.5">
             <Layers className="w-6 h-6 opacity-40" />
-            <span>点击上方任意数据包，展开查看 OSI 七层协议树与字节高亮</span>
+            <span>{t.detailsEmpty}</span>
           </div>
         ) : engineMode === 'wireshark' && wiresharkLoading ? (
           <div className="h-full flex items-center justify-center gap-2 text-xs text-violet-500">
             <Loader2 className="w-4 h-4 animate-spin" />
-            <span>正在调用 Wireshark libwireshark (sharkd JSON-RPC) 深度解剖...</span>
+            <span>
+              {lang === 'zh'
+                ? '正在调用 Wireshark libwireshark (sharkd JSON-RPC)...'
+                : 'Querying Wireshark libwireshark (sharkd JSON-RPC)...'}
+            </span>
           </div>
         ) : engineMode === 'wireshark' && wiresharkError ? (
           <div className="p-4 text-xs text-rose-500">{wiresharkError}</div>
@@ -326,7 +330,7 @@ export const PacketDetailsPane: React.FC<Props> = ({
                 <span className="truncate font-medium">{wiresharkEngineName || 'Wireshark libwireshark'}</span>
                 {tlsDecrypted && (
                   <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold shrink-0">
-                    <LockOpen className="w-3 h-3" /> SSLKEYLOG 已解密
+                    <LockOpen className="w-3 h-3" /> SSLKEYLOG Active
                   </span>
                 )}
               </div>
@@ -384,38 +388,50 @@ export const PacketDetailsPane: React.FC<Props> = ({
                 <div className="flex items-center gap-1.5 min-w-0">
                   <BookOpen className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                   <span className="font-bold text-slate-900 dark:text-white truncate">
-                    {fieldKnowledge.zhTitle}
+                    {lang === 'zh' ? fieldKnowledge.zhTitle : fieldKnowledge.enName}
                   </span>
                   <span className="text-[10px] font-mono-code text-slate-400 truncate hidden sm:inline">
-                    ({fieldKnowledge.enName})
+                    ({fieldKnowledge.key} · OSI L{fieldKnowledge.osiLayer})
                   </span>
                 </div>
                 <button
                   onClick={() => onOpenLearn(detail.summary.no)}
                   className="text-[10.5px] font-semibold text-cyan-600 dark:text-cyan-400 hover:underline shrink-0 cursor-pointer"
                 >
-                  32位首部位图 →
+                  {lang === 'zh' ? '32-bit Header 位图 →' : '32-bit Header Diagram →'}
                 </button>
               </div>
-              <p className="text-slate-700 dark:text-slate-300 leading-snug">{fieldKnowledge.plainExplain}</p>
-              {fieldKnowledge.examTip && (
-                <p className="text-[11px] text-violet-700 dark:text-violet-300">
-                  🎓 <strong>考点：</strong>
-                  {fieldKnowledge.examTip}
-                </p>
-              )}
-              {fieldKnowledge.securityTip && (
-                <p className="text-[11px] text-rose-700 dark:text-rose-300">
-                  🛡️ <strong>安全：</strong>
-                  {fieldKnowledge.securityTip}
+              {lang === 'zh' ? (
+                <>
+                  <p className="text-slate-700 dark:text-slate-300 leading-snug">{fieldKnowledge.plainExplain}</p>
+                  {fieldKnowledge.examTip && (
+                    <p className="text-[11px] text-violet-700 dark:text-violet-300">
+                      🎓 <strong>考点：</strong>
+                      {fieldKnowledge.examTip}
+                    </p>
+                  )}
+                  {fieldKnowledge.securityTip && (
+                    <p className="text-[11px] text-rose-700 dark:text-rose-300">
+                      🛡️ <strong>Security：</strong>
+                      {fieldKnowledge.securityTip}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-slate-700 dark:text-slate-300 leading-snug font-mono-code text-[11px]">
+                  Filter key: <code className="text-cyan-500">{fieldKnowledge.key}</code> · OSI Layer {fieldKnowledge.osiLayer} ({fieldKnowledge.enName}). Click &quot;32-bit Header Diagram&quot; for bit-level RFC structure.
                 </p>
               )}
             </div>
           ) : (
             <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
               <span className="flex items-center gap-1.5">
-                <BookOpen className="w-3.5 h-3.5 text-amber-500" />
-                <span>新手百科已开启：点击上方协议树中的任意字段（如 TTL、SYN、Window、SNI），立即显示中文大白话解释与计网考点！</span>
+                <BookOpen className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                <span>
+                  {lang === 'zh'
+                    ? '点击上方任意协议字段（如 TTL、SYN、Window、SNI），此处立即显示原理与考点解析'
+                    : 'Click any protocol field above (e.g. TTL, SYN, Window, SNI) to inspect its filter key and RFC role'}
+                </span>
               </span>
             </div>
           )}

@@ -18,8 +18,10 @@ import {
 } from 'lucide-react'
 import { api } from '../api'
 import type { InterfaceInfo, InterfacesResponse } from '../types'
+import type { Lang } from '../utils/i18n'
 
 interface Props {
+  lang: Lang
   onStartCapture: (cfg: {
     interfaceId: string
     bpfFilter: string
@@ -32,14 +34,6 @@ interface Props {
   onImportPcap: (file: File) => Promise<void>
   errorMsg: string | null
 }
-
-const BPF_PRESETS = [
-  { label: '全部流量', expr: '' },
-  { label: '网页 HTTP/HTTPS', expr: 'tcp port 80 or tcp port 443' },
-  { label: '域名解析 DNS', expr: 'udp port 53 or tcp port 53' },
-  { label: 'Ping(ICMP) 与 ARP', expr: 'icmp or icmp6 or arp' },
-  { label: '排除 SSH (22)', expr: 'not port 22' },
-]
 
 const Sparkline: React.FC<{ values: number[]; active?: boolean }> = ({ values, active }) => {
   const pts = values && values.length >= 2 ? values : Array(20).fill(0)
@@ -65,12 +59,14 @@ const Sparkline: React.FC<{ values: number[]; active?: boolean }> = ({ values, a
 }
 
 export const CaptureWelcome: React.FC<Props> = ({
+  lang,
   onStartCapture,
   onLoadDemo,
   onLoadDemoAndLearn,
   onImportPcap,
   errorMsg,
 }) => {
+  const isZh = lang === 'zh'
   const [data, setData] = useState<InterfacesResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState<string>('')
@@ -81,6 +77,14 @@ export const CaptureWelcome: React.FC<Props> = ({
   const [bufferMb, setBufferMb] = useState(16)
   const [starting, setStarting] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+
+  const bpfPresets = [
+    { label: isZh ? 'All Traffic' : 'All Traffic', expr: '' },
+    { label: 'HTTP / HTTPS', expr: 'tcp port 80 or tcp port 443' },
+    { label: 'DNS (53)', expr: 'udp port 53 or tcp port 53' },
+    { label: 'ICMP & ARP', expr: 'icmp or icmp6 or arp' },
+    { label: 'No SSH (!22)', expr: 'not port 22' },
+  ]
 
   const fetchIfaces = () => {
     api
@@ -171,7 +175,7 @@ export const CaptureWelcome: React.FC<Props> = ({
               </span>
               {iface.isLoopback && (
                 <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                  本地回环
+                  Loopback
                 </span>
               )}
               {iface.ipv4 && (
@@ -199,7 +203,7 @@ export const CaptureWelcome: React.FC<Props> = ({
                 : 'opacity-0 group-hover:opacity-100 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-cyan-600 hover:text-white'
             }`}
           >
-            开始抓包
+            Capture
           </button>
         </div>
       </div>
@@ -215,13 +219,28 @@ export const CaptureWelcome: React.FC<Props> = ({
             <div className="space-y-2 max-w-2xl">
               <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/25 text-cyan-700 dark:text-cyan-300 text-[11px] font-semibold">
                 <Activity className="w-3.5 h-3.5" />
-                <span>中国科学院大学 ·《软件与系统安全》实验 1A · 计网可视化学习增强版</span>
+                <span>
+                  {isZh
+                    ? 'UCAS Software & System Security · Experiment 1A'
+                    : 'UCAS Software & System Security · Experiment 1A'}
+                </span>
               </div>
               <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-                欢迎使用 WirePulse 网络嗅探与计网学习工坊
+                {isZh ? 'WirePulse Capture Studio' : 'Welcome to WirePulse Capture Studio'}
               </h1>
               <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-                不仅是一台专业级 <span className="font-mono-code text-cyan-600 dark:text-cyan-400">C11 libpcap / Npcap + Wireshark 双引擎</span> 网络协议分析器，更是为本科学习《计算机网络》与抓包入门同学打造的<strong>可视化互动课堂</strong>——双击下方任意网卡抓自己电脑的流量，即可一键生成 <strong>OSI 封装套娃动画</strong>、<strong>教科书 32 位首部位图</strong>、<strong>TCP 时序状态机</strong>与<strong>实时安全雷达</strong>！
+                {isZh ? (
+                  <>
+                    融合 <span className="font-mono-code text-cyan-600 dark:text-cyan-400">C11 libpcap / Npcap</span> 与{' '}
+                    <span className="font-semibold text-violet-600 dark:text-violet-400">Wireshark libwireshark</span> 双引擎：支持经典 3-Pane 抓包、Display Filter 逻辑求值、Follow Stream、OS Process 归因、Security IDS，并内置面向《计算机网络》学习的 <strong>32-bit Header 位图与 OSI 封装动画</strong>。
+                  </>
+                ) : (
+                  <>
+                    High-performance <span className="font-mono-code text-cyan-600 dark:text-cyan-400">C11 libpcap / Npcap</span>{' '}
+                    packet sniffer with OSI 7-layer DPI dissection, Recursive-Descent Display Filter engine, TCP stream reassembly &amp; sequence diagrams, OS process tracing, real-time Security IDS, and live{' '}
+                    <span className="font-semibold text-violet-600 dark:text-violet-400">Wireshark libwireshark (sharkd)</span> integration.
+                  </>
+                )}
               </p>
             </div>
 
@@ -232,51 +251,52 @@ export const CaptureWelcome: React.FC<Props> = ({
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold shadow-lg shadow-emerald-500/20 transition-all cursor-pointer"
               >
                 <GraduationCap className="w-4 h-4" />
-                <span>进入计网可视化学习工坊</span>
+                <span>{isZh ? '计网学习工坊 (NetLearn)' : 'Open NetLearn Studio'}</span>
               </button>
               <button
                 onClick={() => onLoadDemo(false)}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-lg shadow-violet-500/20 transition-all cursor-pointer"
               >
                 <Sparkles className="w-4 h-4" />
-                <span>加载教学/安全演示包</span>
+                <span>{isZh ? '加载 Demo Capture' : 'Instant Security Demo'}</span>
               </button>
               <button
                 onClick={() => onLoadDemo(true)}
                 className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow-lg shadow-cyan-500/20 transition-all cursor-pointer"
               >
                 <Play className="w-4 h-4" />
-                <span>实时流式回放</span>
+                <span>{isZh ? 'Live Replay' : 'Live Replay'}</span>
               </button>
             </div>
           </div>
 
-          {/* Engine Telemetry Badges */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-5 pt-4 border-t border-slate-200/70 dark:border-slate-800/80">
             <div className="flex items-center gap-2.5 text-xs">
               <Cpu className="w-4 h-4 text-cyan-500 shrink-0" />
               <div className="min-w-0">
-                <div className="text-[10px] font-semibold text-slate-400">原生 C11 捕获核心 (NPS)</div>
+                <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Native C11 Engine</div>
                 <div className="font-mono-code text-slate-800 dark:text-slate-200 truncate">
-                  {data?.nativeEngine.version || '检测中...'}
+                  {data?.nativeEngine.version || 'Detecting...'}
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-2.5 text-xs">
               <Layers className="w-4 h-4 text-violet-500 shrink-0" />
               <div className="min-w-0">
-                <div className="text-[10px] font-semibold text-slate-400">Wireshark 增量双引擎</div>
+                <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Wireshark Dual-Engine</div>
                 <div className="font-mono-code text-slate-800 dark:text-slate-200 truncate">
-                  {data?.wireshark.available ? data.wireshark.version : '独立自研解析模式'}
+                  {data?.wireshark.available ? data.wireshark.version : 'Standalone Native Mode'}
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-2.5 text-xs">
               <Shield className="w-4 h-4 text-emerald-500 shrink-0" />
               <div className="min-w-0">
-                <div className="text-[10px] font-semibold text-slate-400">安全雷达 · 进程追踪 · 计网百科</div>
+                <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">IDS · Process · NetLearn</div>
                 <div className="text-slate-800 dark:text-slate-200 truncate">
-                  13 条 IDS 规则 · OS 进程归因 · 32 位首部位图
+                  {isZh
+                    ? '13 IDS Rules · OS PID 归因 · 32-bit Header 位图'
+                    : '13 Threat Rules · OS PID Attribution · 32-bit RFC Headers'}
                 </div>
               </div>
             </div>
@@ -290,33 +310,27 @@ export const CaptureWelcome: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Capture Filter (Kernel BPF) + Beginner-Friendly Options */}
+        {/* Capture Filter (Kernel BPF) */}
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f1520] p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Sliders className="w-4 h-4 text-cyan-500" />
               <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
-                内核态 BPF 捕获过滤器与抓包参数
+                Capture Filter (Kernel BPF) &amp; Options
               </h2>
-              <span className="hidden md:inline text-[11px] text-slate-400">
-                （在操作系统内核层提前过滤无关流量，大幅降低高速抓包丢包率）
-              </span>
             </div>
             <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
-              <label
-                className="flex items-center gap-1.5 cursor-pointer"
-                title="混杂模式（Promiscuous Mode）：让网卡接收经过链路的所有数据帧，而不仅限于发给本机 MAC 的帧"
-              >
+              <label className="flex items-center gap-1.5 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={promisc}
                   onChange={(e) => setPromisc(e.target.checked)}
                   className="accent-cyan-500 rounded"
                 />
-                <span>混杂模式 (Promisc)</span>
+                <span>Promiscuous</span>
               </label>
-              <label className="flex items-center gap-1.5" title="Linux TPACKET_V3 / Npcap 内核环形缓冲区大小">
-                <span>环形缓冲:</span>
+              <label className="flex items-center gap-1.5">
+                <span>Ring Buffer:</span>
                 <select
                   value={bufferMb}
                   onChange={(e) => setBufferMb(Number(e.target.value))}
@@ -327,16 +341,16 @@ export const CaptureWelcome: React.FC<Props> = ({
                   ))}
                 </select>
               </label>
-              <label className="flex items-center gap-1.5" title="单包最大截取字节数">
-                <span>截断长度:</span>
+              <label className="flex items-center gap-1.5">
+                <span>Snaplen:</span>
                 <select
                   value={snaplen}
                   onChange={(e) => setSnaplen(Number(e.target.value))}
                   className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-mono-code text-xs"
                 >
-                  <option value={65535}>65535 (完整报文)</option>
-                  <option value={1518}>1518 (标准以太网)</option>
-                  <option value={256}>256 (仅首部)</option>
+                  <option value={65535}>65535 (Full)</option>
+                  <option value={1518}>1518 (MTU)</option>
+                  <option value={256}>256 (Headers)</option>
                 </select>
               </label>
             </div>
@@ -357,7 +371,11 @@ export const CaptureWelcome: React.FC<Props> = ({
                 type="text"
                 value={bpfFilter}
                 onChange={(e) => setBpfFilter(e.target.value)}
-                placeholder="输入内核 BPF 过滤表达式（留空抓取全部）... 例如: tcp port 80 or udp port 53"
+                placeholder={
+                  isZh
+                    ? 'Enter Capture Filter (pcap_compile)... 例如: tcp port 80 or udp port 53'
+                    : 'Enter kernel BPF capture filter (compiled via pcap_compile)... e.g. tcp port 80 or udp port 53'
+                }
                 className="flex-1 bg-transparent text-xs font-mono-code text-slate-800 dark:text-slate-100 focus:outline-none"
               />
               {bpfFilter.trim() &&
@@ -373,17 +391,17 @@ export const CaptureWelcome: React.FC<Props> = ({
               className="flex items-center justify-center gap-2 px-5 h-9 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white text-xs font-semibold shadow-sm transition-colors cursor-pointer shrink-0"
             >
               <Radio className="w-3.5 h-3.5" />
-              <span>{starting ? '正在启动...' : '开始实时抓包'}</span>
+              <span>{starting ? 'Starting...' : 'Start Capture'}</span>
             </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[11px] text-slate-400 mr-1">新手常用预设：</span>
-            {BPF_PRESETS.map((p) => (
+            <span className="text-[11px] text-slate-400 mr-1">Presets:</span>
+            {bpfPresets.map((p) => (
               <button
                 key={p.label}
                 onClick={() => setBpfFilter(p.expr)}
-                className="px-2 py-0.5 rounded text-[11px] bg-slate-100 dark:bg-slate-800/80 hover:bg-cyan-500/15 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+                className="px-2 py-0.5 rounded text-[11px] font-mono-code bg-slate-100 dark:bg-slate-800/80 hover:bg-cyan-500/15 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
               >
                 {p.label}
               </button>
@@ -398,17 +416,19 @@ export const CaptureWelcome: React.FC<Props> = ({
               <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f1520] p-4 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-xs font-bold text-violet-600 dark:text-violet-400">
-                      宿主机物理网卡 — Wireshark dumpcap / Npcap 实时捕获桥（推荐直接双击体验）
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">
+                      Host Physical NICs — Wireshark dumpcap / Npcap Bridge
                     </h3>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      无需 root 密码即可直接嗅探本机以太网 / WLAN / 回环网卡的真实上网流量，抓完后可切到「计网学习」逐包图解
+                      {isZh
+                        ? '双击任意网卡即可实时捕获本机流量，抓完后可切到「计网学习」逐包可视化剖析'
+                        : 'Double-click any interface to sniff live traffic immediately via Npcap bridge'}
                     </p>
                   </div>
                   <button
                     onClick={fetchIfaces}
                     className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 cursor-pointer"
-                    title="刷新网卡列表"
+                    title="Refresh interfaces"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                   </button>
@@ -421,16 +441,25 @@ export const CaptureWelcome: React.FC<Props> = ({
 
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f1520] p-4 space-y-2.5">
               <div>
-                <h3 className="text-xs font-bold text-cyan-600 dark:text-cyan-400">
-                  原生 C11 libpcap / TPACKET_V3 网卡列表
+                <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
+                  Native C11 libpcap / TPACKET_V3 Interfaces
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  直接调用自研 C11 <code className="font-mono-code">libwirepulse_pcap</code> 环形缓冲引擎并采集实时流量波形
-                  {data && !data.nativeEngine.isRoot && '（Linux 下需 sudo 或 CAP_NET_RAW 权限）'}
+                  {isZh ? (
+                    <>
+                      直接调用 C11 <code className="font-mono-code">libwirepulse_pcap</code> 引擎与实时 Sparkline 采样
+                      {data && !data.nativeEngine.isRoot && ' (Linux requires sudo / CAP_NET_RAW)'}
+                    </>
+                  ) : (
+                    <>
+                      Direct C11 <code className="font-mono-code">libwirepulse_pcap</code> ring-buffer capture with live sparklines
+                      {data && !data.nativeEngine.isRoot && ' (Requires sudo / CAP_NET_RAW on Linux)'}
+                    </>
+                  )}
                 </p>
               </div>
               {loading ? (
-                <div className="text-xs text-slate-400 py-6 text-center">正在通过 pcap_findalldevs() 枚举系统网卡...</div>
+                <div className="text-xs text-slate-400 py-6 text-center">Enumerating interfaces via pcap_findalldevs()...</div>
               ) : (
                 <div className="space-y-1.5 max-h-[250px] overflow-y-auto pr-1">
                   {(data?.nativeInterfaces || []).map(renderIfaceRow)}
@@ -439,7 +468,6 @@ export const CaptureWelcome: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* Right Column: Offline PCAP Dropzone + 3-Step Beginner Learning Path */}
           <div className="space-y-4">
             <label
               onDragOver={(e) => {
@@ -474,19 +502,20 @@ export const CaptureWelcome: React.FC<Props> = ({
               </div>
               <div>
                 <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                  拖入或打开 .pcap / .pcapng 文件
+                  Open PCAP / PCAPNG
                 </div>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                  完全兼容 Wireshark 保存的抓包文件，导入后可立即使用 32 位首部位图与安全分析功能。
+                  {isZh
+                    ? '拖拽或点击导入 Wireshark .pcap / .pcapng 捕获文件'
+                    : 'Drag & drop any Wireshark .pcap or .pcapng capture file here, or click to browse.'}
                 </p>
               </div>
             </label>
 
-            {/* 3-Step Undergrad Learning Guide Card */}
             <div className="rounded-xl border border-emerald-500/30 bg-white dark:bg-[#0f1520] p-4 space-y-3">
               <h3 className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
                 <GraduationCap className="w-4 h-4" />
-                <span>计网新手三步上手指南</span>
+                <span>{isZh ? 'Quick Start 上手路径' : 'Quick Start Workflow'}</span>
               </h3>
               <ol className="space-y-2 text-xs text-slate-600 dark:text-slate-300">
                 <li className="flex items-start gap-2">
@@ -494,7 +523,9 @@ export const CaptureWelcome: React.FC<Props> = ({
                     1
                   </span>
                   <span>
-                    <strong>抓真实流量：</strong>双击左侧「以太网」或点击「加载教学演示包」，打开浏览器或执行一次 <code className="font-mono-code">ping</code> 产生流量后点停止。
+                    {isZh
+                      ? '双击左侧网卡实时抓包（或点击加载 Demo Capture）。'
+                      : 'Double-click any NIC to capture live packets (or load Demo Capture).'}
                   </span>
                 </li>
                 <li className="flex items-start gap-2">
@@ -502,7 +533,9 @@ export const CaptureWelcome: React.FC<Props> = ({
                     2
                   </span>
                   <span>
-                    <strong>看懂数据包结构：</strong>点击左侧 <strong>「计网学习」</strong>，用 OSI 套娃封装动画 + 教科书 32 位首部位图亲眼看清每个比特的含义。
+                    {isZh
+                      ? '进入「计网学习」交互查看 OSI 套娃封装动画与 32-bit RFC Header 位图。'
+                      : 'Open NetLearn Studio to explore OSI encapsulation & live 32-bit RFC header diagrams.'}
                   </span>
                 </li>
                 <li className="flex items-start gap-2">
@@ -510,7 +543,9 @@ export const CaptureWelcome: React.FC<Props> = ({
                     3
                   </span>
                   <span>
-                    <strong>进阶安全实战：</strong>使用「中文过滤向导」、「流与时序图」、「进程追踪」与「安全雷达」排查重传与网络攻击。
+                    {isZh
+                      ? '在 Streams / Processes / Security 视图排查重传、进程连接与安全告警。'
+                      : 'Inspect TCP flows, OS processes, and real-time IDS alerts across workspace tabs.'}
                   </span>
                 </li>
               </ol>

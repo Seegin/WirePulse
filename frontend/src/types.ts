@@ -147,8 +147,12 @@ export interface StreamTurn {
   packetNos: number[]
   timestamp: number
   length: number
+  isBinary?: boolean
+  entropy?: number
+  ascii?: string
   text: string
   hex: string
+  truncated?: boolean
   rawBase64: string
 }
 

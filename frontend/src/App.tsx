@@ -298,7 +298,7 @@ export default function App() {
     setErrorMsg(null)
     const res = await api.startCapture(cfg)
     if (!res.ok) {
-      setErrorMsg(res.error || '启动捕获失败')
+      setErrorMsg(res.error || (lang === 'zh' ? '启动捕获失败' : 'Failed to start capture'))
       return
     }
     if (res.status) setStatus(res.status)
@@ -339,7 +339,7 @@ export default function App() {
     setErrorMsg(null)
     const res = await api.importPcap(file)
     if (!res.ok) {
-      setErrorMsg(res.error || '导入 PCAP 失败')
+      setErrorMsg(res.error || (lang === 'zh' ? '导入 PCAP 失败' : 'Failed to import PCAP'))
       return
     }
     if (res.status) setStatus(res.status)
@@ -492,6 +492,7 @@ export default function App() {
         <main className="flex-1 min-w-0 min-h-0 overflow-hidden relative">
           {activeTab === 'capture' && (
             <CaptureWelcome
+              lang={lang}
               onStartCapture={handleStartCapture}
               onLoadDemo={(rt) => handleLoadDemo(rt, 'packets')}
               onLoadDemoAndLearn={() => handleLoadDemo(false, 'learn')}
@@ -530,7 +531,7 @@ export default function App() {
               <div
                 onMouseDown={startVerticalResize}
                 className="h-1.5 bg-slate-200 dark:bg-slate-800/90 hover:bg-cyan-500/70 cursor-row-resize transition-colors shrink-0 flex items-center justify-center"
-                title="拖拽调整上下窗格高度"
+                title={lang === 'zh' ? '拖拽调整窗格高度' : 'Drag to resize panes'}
               >
                 <div className="w-10 h-0.5 rounded-full bg-slate-400/60" />
               </div>
@@ -564,7 +565,7 @@ export default function App() {
                 <div
                   onMouseDown={startHorizontalResize}
                   className="w-1.5 bg-slate-200 dark:bg-slate-800/90 hover:bg-cyan-500/70 cursor-col-resize transition-colors shrink-0 flex items-center justify-center"
-                  title="拖拽调整协议树与字节视图宽度"
+                  title={lang === 'zh' ? '拖拽调整窗格宽度' : 'Drag to resize panes'}
                 >
                   <div className="h-10 w-0.5 rounded-full bg-slate-400/60" />
                 </div>
@@ -589,6 +590,7 @@ export default function App() {
 
           {activeTab === 'learn' && (
             <NetLearnView
+              lang={lang}
               packets={packets}
               selectedNo={selectedNo}
               onSelectPacket={(no) => setSelectedNo(no)}
@@ -601,16 +603,19 @@ export default function App() {
 
           {activeTab === 'streams' && (
             <StreamView
+              lang={lang}
               initialSelection={streamSelection}
               processFilter={streamProcFilter}
               onClearProcessFilter={() => setStreamProcFilter(null)}
               onJumpToPacket={handleJumpToPacket}
               onApplyFilter={handleApplyFilter}
+              onOpenWsLab={() => setActiveTab('wireshark')}
             />
           )}
 
           {activeTab === 'processes' && (
             <ProcessView
+              lang={lang}
               onTraceProcessStreams={(pid, name) => {
                 setStreamProcFilter({ pid, name })
                 setStreamSelection(null)
@@ -622,6 +627,7 @@ export default function App() {
 
           {activeTab === 'security' && (
             <SecurityView
+              lang={lang}
               onJumpToPacket={handleJumpToPacket}
               onFollowStream={(proto, sid) => handleFollowStream(proto, sid, 'stream')}
             />
@@ -629,6 +635,7 @@ export default function App() {
 
           {activeTab === 'analytics' && (
             <AnalyticsView
+              lang={lang}
               onFilterIp={(ip) => handleApplyFilter(`ip.addr == ${ip}`)}
               onFilterProto={(proto) => handleApplyFilter(proto)}
             />
@@ -636,6 +643,7 @@ export default function App() {
 
           {activeTab === 'wireshark' && (
             <WiresharkLabView
+              lang={lang}
               status={status}
               onApplyFilter={handleApplyFilter}
               onStatusRefresh={refreshStatus}

@@ -151,7 +151,7 @@ export const TopToolbar: React.FC<Props> = ({
           <button
             onClick={() => onNavigate('capture')}
             className="flex items-center gap-2.5 group focus:outline-none cursor-pointer"
-            title="WirePulse 捕获中心"
+            title={lang === 'zh' ? 'WirePulse Capture 捕获中心' : 'WirePulse Capture Hub'}
           >
             <div className="relative w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 via-sky-500 to-indigo-600 flex items-center justify-center shadow-md shadow-cyan-500/20 group-hover:scale-105 transition-transform">
               <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="none">
@@ -287,7 +287,7 @@ export const TopToolbar: React.FC<Props> = ({
           <button
             onClick={onToggleLang}
             className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold border border-slate-200 dark:border-slate-700 bg-slate-100/80 dark:bg-slate-900 hover:border-cyan-500 text-slate-700 dark:text-slate-200 cursor-pointer"
-            title="切换中文学习界面 / Switch to English"
+            title={lang === 'zh' ? 'Switch to Pure English' : 'Switch to Chinese + Wireshark Hybrid'}
           >
             <Languages className="w-3.5 h-3.5 text-cyan-500" />
             <span>{lang === 'zh' ? '中文' : 'EN'}</span>
@@ -296,14 +296,22 @@ export const TopToolbar: React.FC<Props> = ({
           <button
             onClick={onToggleTheme}
             className="p-1.5 rounded-md text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            title={dark ? '切换浅色主题' : '切换深色主题'}
+            title={
+              lang === 'zh'
+                ? dark
+                  ? '切换浅色主题'
+                  : '切换深色主题'
+                : dark
+                  ? 'Switch to Daylight Light Theme'
+                  : 'Switch to Obsidian Dark Theme'
+            }
           >
             {dark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-500" />}
           </button>
         </div>
       </div>
 
-      {/* Row 2: Wireshark Display Filter Bar + Beginner Chinese Filter Wizard */}
+      {/* Row 2: Wireshark Display Filter Bar + Visual Filter Builder */}
       {(activeTab === 'packets' || appliedFilter) && (
         <div className="relative flex flex-wrap items-center gap-2 px-3.5 py-1.5 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#0a0f18]">
           {/* Beginner Visual Filter Builder Trigger */}
@@ -314,7 +322,11 @@ export const TopToolbar: React.FC<Props> = ({
                 ? 'bg-violet-600 text-white border-violet-500'
                 : 'bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-500/30 hover:bg-violet-500/20'
             }`}
-            title="不用死记语法！通过中文勾选自动生成 Wireshark 过滤表达式"
+            title={
+              lang === 'zh'
+                ? '通过勾选条件自动生成 Wireshark Display Filter 表达式'
+                : 'Visually compose a Wireshark Display Filter expression'
+            }
           >
             <Wand2 className="w-3.5 h-3.5" />
             <span>{t.filterWizard}</span>
@@ -353,7 +365,7 @@ export const TopToolbar: React.FC<Props> = ({
                     onApplyFilter('')
                   }}
                   className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                  title="清空过滤"
+                  title="Clear Display Filter"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -362,7 +374,7 @@ export const TopToolbar: React.FC<Props> = ({
                 filterExpr.trim() && (
                   <span
                     className="hidden md:flex items-center gap-1 text-[10px] font-mono-code px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 max-w-[210px] truncate"
-                    title={`AST 逻辑树: ${liveValid.ast}`}
+                    title={`AST: ${liveValid.ast}`}
                   >
                     <CheckCircle2 className="w-3 h-3 shrink-0" />
                     <span className="truncate">{liveValid.ast}</span>
@@ -390,8 +402,12 @@ export const TopToolbar: React.FC<Props> = ({
             {showSuggest && suggestions.length > 0 && (
               <div className="absolute left-0 right-0 top-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#121a2b] shadow-xl overflow-hidden z-50">
                 <div className="px-2.5 py-1 text-[10px] font-semibold text-slate-400 border-b border-slate-100 dark:border-slate-800 flex justify-between">
-                  <span>支持逻辑演算：&amp;&amp; (且), || (或), ! (非), ==, !=, contains, matches, in &#123;...&#125;</span>
-                  <span>点击插入字段</span>
+                  <span>
+                    {lang === 'zh'
+                      ? '支持逻辑演算：&& (and), || (or), ! (not), ==, !=, contains, matches, in {...}'
+                      : 'Operators: && (and), || (or), ! (not), ==, !=, contains, matches, in {...}'}
+                  </span>
+                  <span>{lang === 'zh' ? '点击插入' : 'Click to insert'}</span>
                 </div>
                 {suggestions.map((s) => (
                   <button
@@ -447,16 +463,22 @@ export const TopToolbar: React.FC<Props> = ({
             })}
           </div>
 
-          {/* Beginner Chinese Visual Filter Builder Popover */}
+          {/* Visual Filter Builder Popover */}
           {showWizard && (
             <div className="absolute left-3.5 top-11 w-[520px] max-w-[94vw] rounded-xl border border-violet-500/40 bg-white dark:bg-[#121a2c] shadow-2xl p-4 z-50 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                     <Wand2 className="w-3.5 h-3.5 text-violet-500" />
-                    中文可视化过滤向导（边用边学 Wireshark 逻辑表达式）
+                    {lang === 'zh'
+                      ? 'Display Filter 可视化向导（勾选自动生成逻辑表达式）'
+                      : 'Visual Display Filter Builder'}
                   </h4>
-                  <p className="text-[11px] text-slate-500">勾选想筛选的条件，系统自动拼出标准的逻辑过滤语句</p>
+                  <p className="text-[11px] text-slate-500">
+                    {lang === 'zh'
+                      ? '勾选协议与条件，实时生成标准 Wireshark Display Filter 语法'
+                      : 'Select protocols and criteria to build a valid Display Filter expression'}
+                  </p>
                 </div>
                 <button onClick={() => setShowWizard(false)} className="text-slate-400 hover:text-slate-200 cursor-pointer">
                   <X className="w-4 h-4" />
@@ -464,7 +486,9 @@ export const TopToolbar: React.FC<Props> = ({
               </div>
 
               <div className="space-y-1.5">
-                <div className="text-[11px] font-semibold text-slate-500">1. 选择协议类型（可多选，自动以 || 逻辑或连接）</div>
+                <div className="text-[11px] font-semibold text-slate-500">
+                  {lang === 'zh' ? '1. Protocol 协议（多选自动用 || 连接）' : '1. Protocols (multi-select joined with ||)'}
+                </div>
                 <div className="flex flex-wrap gap-1.5">
                   {['http', 'tls', 'dns', 'tcp', 'udp', 'arp', 'icmp', 'quic', 'ssh', 'ftp'].map((p) => {
                     const checked = wizProtos.includes(p)
@@ -489,29 +513,35 @@ export const TopToolbar: React.FC<Props> = ({
 
               <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <label className="text-[10.5px] text-slate-500 block mb-1">2. 主机 IP / 网段</label>
+                  <label className="text-[10.5px] text-slate-500 block mb-1">
+                    {lang === 'zh' ? '2. IP / CIDR 网段' : '2. IP / CIDR'}
+                  </label>
                   <input
                     value={wizIp}
                     onChange={(e) => setWizIp(e.target.value)}
-                    placeholder="如 10.212.5.0/24"
+                    placeholder="10.212.5.0/24"
                     className="w-full h-7 px-2 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#090d14] text-xs font-mono-code text-slate-800 dark:text-slate-100"
                   />
                 </div>
                 <div>
-                  <label className="text-[10.5px] text-slate-500 block mb-1">3. 端口号 (TCP/UDP)</label>
+                  <label className="text-[10.5px] text-slate-500 block mb-1">
+                    {lang === 'zh' ? '3. Port 端口' : '3. TCP/UDP Port'}
+                  </label>
                   <input
                     value={wizPort}
                     onChange={(e) => setWizPort(e.target.value)}
-                    placeholder="如 80 / 443 / 53"
+                    placeholder="80 / 443 / 53"
                     className="w-full h-7 px-2 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#090d14] text-xs font-mono-code text-slate-800 dark:text-slate-100"
                   />
                 </div>
                 <div>
-                  <label className="text-[10.5px] text-slate-500 block mb-1">4. 所属进程名</label>
+                  <label className="text-[10.5px] text-slate-500 block mb-1">
+                    {lang === 'zh' ? '4. Process 进程名' : '4. Process Name'}
+                  </label>
                   <input
                     value={wizProc}
                     onChange={(e) => setWizProc(e.target.value)}
-                    placeholder="如 chrome / nmap"
+                    placeholder="chrome / nmap"
                     className="w-full h-7 px-2 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#090d14] text-xs font-mono-code text-slate-800 dark:text-slate-100"
                   />
                 </div>
@@ -524,12 +554,16 @@ export const TopToolbar: React.FC<Props> = ({
                   onChange={(e) => setWizAlertOnly(e.target.checked)}
                   className="accent-rose-500"
                 />
-                <span>仅显示触发安全 IDS 告警的可疑数据包 (alert)</span>
+                <span>
+                  {lang === 'zh'
+                    ? '仅显示触发 Security IDS 告警的数据包 (alert)'
+                    : 'Only packets with Security IDS alerts (alert)'}
+                </span>
               </label>
 
               <div className="p-2.5 rounded-lg bg-slate-900 text-cyan-300 font-mono-code text-[11.5px] border border-slate-800">
-                <span className="text-slate-500 mr-2">生成的表达式 &gt;</span>
-                {wizardBuiltExpr || '(全部数据包)'}
+                <span className="text-slate-500 mr-2">EXPR &gt;</span>
+                {wizardBuiltExpr || (lang === 'zh' ? '(全部数据包)' : '(All packets)')}
               </div>
 
               <div className="flex justify-end gap-2">
@@ -543,7 +577,7 @@ export const TopToolbar: React.FC<Props> = ({
                   }}
                   className="px-3 py-1 rounded-md border border-slate-200 dark:border-slate-700 text-xs text-slate-500 cursor-pointer"
                 >
-                  重置
+                  {lang === 'zh' ? '重置' : 'Reset'}
                 </button>
                 <button
                   onClick={() => {
@@ -553,7 +587,7 @@ export const TopToolbar: React.FC<Props> = ({
                   }}
                   className="px-4 py-1 rounded-md bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold cursor-pointer"
                 >
-                  填入并立即过滤
+                  {lang === 'zh' ? '应用 Display Filter' : 'Apply Filter'}
                 </button>
               </div>
             </div>

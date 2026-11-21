@@ -104,7 +104,7 @@ export const PacketListPane: React.FC<Props> = ({
             {packets.length.toLocaleString()} / {totalCaptured.toLocaleString()} {t.frames}
           </span>
           <span className="hidden lg:inline text-[10px] font-normal text-slate-400">
-            （右键任意数据包可追踪流、查看时序图或一键进入「计网学习工坊」图解）
+            {t.listHint}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -150,7 +150,7 @@ export const PacketListPane: React.FC<Props> = ({
         {packets.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 text-xs gap-2 p-6">
             <Layers className="w-7 h-7 opacity-40" />
-            <span>当前没有匹配过滤条件的数据包，或尚未开始捕获。</span>
+            <span>{t.listEmpty}</span>
           </div>
         ) : (
           <div style={{ height: totalH, position: 'relative' }}>
@@ -261,7 +261,7 @@ export const PacketListPane: React.FC<Props> = ({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="px-3 py-1 text-[10px] font-semibold text-slate-400 border-b border-slate-100 dark:border-slate-800">
-            帧 #{ctxMenu.pkt.no} · {ctxMenu.pkt.protocol}
+            Frame #{ctxMenu.pkt.no} · {ctxMenu.pkt.protocol}
           </div>
 
           <button

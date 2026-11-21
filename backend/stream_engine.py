@@ -11,10 +11,66 @@ Implements:
 from __future__ import annotations
 
 import base64
+import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from .dissector.models import FieldNode, PacketRecord
+
+
+def _bytes_entropy(data: bytes) -> float:
+    if not data:
+        return 0.0
+    sample = data[:4096]
+    counts: Dict[int, int] = {}
+    for b in sample:
+        counts[b] = counts.get(b, 0) + 1
+    n = float(len(sample))
+    return -sum((c / n) * math.log2(c / n) for c in counts.values())
+
+
+def _to_wireshark_ascii(data: bytes, max_bytes: int = 16384) -> str:
+    """Wireshark Follow Stream ASCII mode: printable ASCII + \\r\\n\\t kept, all other bytes rendered as '.'."""
+    chunk = data[:max_bytes]
+    chars = []
+    for b in chunk:
+        if 32 <= b <= 126 or b in (9, 10, 13):
+            chars.append(chr(b))
+        else:
+            chars.append(".")
+    return "".join(chars)
+
+
+def _to_clean_utf8(data: bytes, max_bytes: int = 16384) -> str:
+    """UTF-8 decoding with raw C0/C1 control chars replaced by '.' so no ugly tofu boxes appear."""
+    decoded = data[:max_bytes].decode("utf-8", errors="replace")
+    out = []
+    for ch in decoded:
+        code = ord(ch)
+        if ch in ("\n", "\r", "\t") or (code >= 32 and code != 0x7F and code != 0xFFFD):
+            out.append(ch)
+        else:
+            out.append(".")
+    return "".join(out)
+
+
+def _is_binary_payload(data: bytes) -> Tuple[bool, float]:
+    if not data:
+        return False, 0.0
+    sample = data[:2048]
+    printable = sum(1 for b in sample if 32 <= b <= 126 or b in (9, 10, 13))
+    ratio = printable / float(len(sample))
+    ent = _bytes_entropy(sample)
+    # Check if valid UTF-8 text (e.g., Chinese JSON/HTML) vs true binary/encrypted bytes
+    utf8_ok = False
+    try:
+        dec = sample.decode("utf-8")
+        ctrl = sum(1 for ch in dec if ord(ch) < 32 and ch not in ("\n", "\r", "\t"))
+        utf8_ok = (ctrl / max(1, len(dec))) < 0.05
+    except UnicodeDecodeError:
+        utf8_ok = False
+    is_bin = (not utf8_ok and ratio < 0.78) or (ratio < 0.65 and ent > 5.8)
+    return is_bin, round(ent, 2)
 
 
 @dataclass
@@ -406,14 +462,19 @@ class StreamTracker:
         serialized_turns = []
         for t in turns:
             raw_b = bytes(t["_raw"])
+            is_bin, ent = _is_binary_payload(raw_b)
             serialized_turns.append(
                 {
                     "direction": t["direction"],
                     "packetNos": t["packetNos"],
                     "timestamp": t["timestamp"],
                     "length": len(raw_b),
-                    "text": raw_b.decode("utf-8", errors="replace"),
-                    "hex": raw_b[:4096].hex(),
+                    "isBinary": is_bin,
+                    "entropy": ent,
+                    "ascii": _to_wireshark_ascii(raw_b, 16384),
+                    "text": _to_clean_utf8(raw_b, 16384),
+                    "hex": raw_b[:8192].hex(),
+                    "truncated": len(raw_b) > 8192,
                     "rawBase64": base64.b64encode(raw_b[:65536]).decode("ascii"),
                 }
             )

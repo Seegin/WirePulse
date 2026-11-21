@@ -428,8 +428,51 @@ export function lookupFieldKnowledge(fieldKey: string, label?: string): FieldKno
   return null
 }
 
+const EN_FIELD_EXPLAIN: Record<string, string> = {
+  'eth.dst': '48-bit next-hop hardware MAC address (local LAN peer or default gateway router). ff:ff:ff:ff:ff:ff denotes L2 broadcast.',
+  'eth.src': '48-bit sender NIC MAC address; the upper 24 bits (OUI) identify the hardware vendor.',
+  'eth.type': '16-bit EtherType identifying the encapsulated L3 protocol (0x0800 = IPv4, 0x0806 = ARP, 0x86DD = IPv6, 0x8100 = 802.1Q VLAN).',
+  'arp.opcode': 'ARP Operation Code: 1 = Request (broadcast query for target MAC), 2 = Reply (unicast/gratuitous MAC mapping). Unauthenticated by design.',
+  'arp.src.hw_mac': '48-bit hardware MAC address claimed by the ARP sender.',
+  'arp.src.proto_ipv4': '32-bit IPv4 address claimed by the ARP sender; receivers update their local ARP cache table accordingly.',
+  'arp.dst.proto_ipv4': '32-bit target IPv4 address whose hardware MAC address is being queried.',
+  'ip.version': '4-bit IP version field: 4 for IPv4 (32-bit addresses) or 6 for IPv6 (128-bit addresses).',
+  'ip.hdr_len': '4-bit Internet Header Length (IHL) in 32-bit (4-byte) words. Standard header without options = 5 (20 bytes).',
+  'ip.dsfield': 'Differentiated Services Code Point (6-bit DSCP for QoS) + 2-bit Explicit Congestion Notification (ECN).',
+  'ip.len': '16-bit total IPv4 datagram length (header + payload) in bytes, up to 65,535 bytes.',
+  'ip.id': '16-bit datagram identifier shared across all IP fragments belonging to the same original packet.',
+  'ip.flags': 'DF (Don\'t Fragment) + MF (More Fragments) flags and 13-bit Fragment Offset measured in 8-byte units.',
+  'ip.ttl': '8-bit hop limit decremented by 1 at every router to prevent routing loops; triggers ICMP Time Exceeded at 0.',
+  'ip.proto': '8-bit upper-layer protocol identifier (1 = ICMP, 6 = TCP, 17 = UDP, 58 = ICMPv6).',
+  'ip.checksum': '16-bit ones\'-complement checksum covering the IPv4 header only; recomputed at every router hop.',
+  'ip.src': '32-bit logical IPv4 address of the sending host (or NAT egress interface).',
+  'ip.dst': '32-bit logical IPv4 address of the destination host used for longest-prefix routing table lookups.',
+  'icmp.type': 'ICMP control message type: 8 = Echo Request (Ping), 0 = Echo Reply, 3 = Destination Unreachable, 11 = Time Exceeded.',
+  'tcp.srcport': '16-bit source port identifying the sending local socket/process (typically ephemeral 49152–65535 on clients).',
+  'tcp.dstport': '16-bit destination service port on the remote endpoint (e.g., 80 HTTP, 443 HTTPS, 22 SSH).',
+  'tcp.seq': '32-bit byte-stream sequence number of the first payload byte in this TCP segment (SYN and FIN each consume 1 sequence number).',
+  'tcp.ack': '32-bit cumulative acknowledgment number indicating the next expected sequence byte from the peer.',
+  'tcp.hdr_len': '4-bit TCP Data Offset in 32-bit words (5 = 20B base header; up to 60B with MSS/SACK/Timestamp/WS options).',
+  'tcp.flags': 'TCP control bits governing state transitions: SYN (handshake), ACK, PSH, RST (abort), FIN (graceful close), URG.',
+  'tcp.window_size': '16-bit receive window advertising available buffer space for sliding-window flow control.',
+  'tcp.checksum': '16-bit end-to-end checksum computed over the IP pseudo-header, TCP header, and TCP payload.',
+  'udp.srcport': '16-bit sender UDP port in the stateless 8-byte RFC 768 datagram header.',
+  'udp.dstport': '16-bit destination UDP port (e.g., 53 DNS, 67/68 DHCP, 443 QUIC).',
+  'udp.length': '16-bit total UDP datagram length (8-byte header + payload) in bytes.',
+  'dns.id': '16-bit Transaction ID matching asynchronous DNS responses back to their originating queries.',
+  'dns.qry.name': 'Domain name queried via RFC 1035 length-prefixed labels and pointer compression.',
+  'dns.a': 'Resolved 32-bit IPv4 address returned in a DNS A resource record.',
+}
+
+export function explainFieldEn(fk: FieldKnowledge): string {
+  return (
+    EN_FIELD_EXPLAIN[fk.key] ||
+    `OSI Layer ${fk.osiLayer} protocol field (${fk.enName}, filter key: ${fk.key}) parsed directly from live packet bytes.`
+  )
+}
+
 /**
- * 为任意真实捕获的数据包生成「本科生一眼就能看懂的中文大白话故事」
+ * 为任意真实捕获的数据包生成直观解说（支持中文中英混排 & 纯英文双模式）
  */
 export interface PacketNarration {
   headline: string
@@ -439,16 +482,182 @@ export interface PacketNarration {
   securityNote?: string
 }
 
+export function narratePacketEn(detail: PacketDetail): PacketNarration {
+  const s = detail.summary
+  const proto = s.protocol.toUpperCase()
+  const srcEp = s.srcPort ? `${s.src}:${s.srcPort}` : s.src
+  const dstEp = s.dstPort ? `${s.dst}:${s.dstPort}` : s.dst
+  const securityNote = s.alertSeverity
+    ? `Security IDS flagged this frame [${s.alertSeverity}]: ${s.alertRules.join(', ')}. Open the Security tab for forensic evidence.`
+    : undefined
+
+  if (proto === 'ARP') {
+    const isReq = s.info.includes('Who has')
+    return {
+      headline: isReq ? 'LAN Broadcast: ARP Address Resolution Request' : 'LAN Unicast/Announcement: ARP Reply',
+      story: isReq
+        ? `Host ${s.src} knows the target IPv4 address but needs its 48-bit Ethernet MAC address, broadcasting "${s.info}" across the local subnet.`
+        : `Endpoint announced an IP-to-MAC binding ("${s.info}"). Receiving hosts cache this mapping in their local ARP table.`,
+      keyConcept: 'ARP bridges OSI Layer 2 (MAC) and Layer 3 (IPv4) within a single broadcast domain.',
+      takeaways: [
+        'Ethernet frames require a 48-bit Destination MAC before leaving the NIC',
+        'ARP Requests broadcast to ff:ff:ff:ff:ff:ff; ARP Replies are typically unicast',
+        'ARP lacks cryptographic authentication, enabling MITM ARP spoofing on untrusted LANs',
+      ],
+      securityNote,
+    }
+  }
+
+  if (proto === 'DNS' || proto === 'MDNS') {
+    const isResp = s.info.includes('response')
+    return {
+      headline: isResp ? 'DNS Resolution Response (Domain → IP)' : 'DNS Resolution Query (Lookup Domain)',
+      story: isResp
+        ? `DNS server ${srcEp} answered ${dstEp}: ${s.info}. The client can now initiate a TCP/UDP connection to the resolved IP.`
+        : `Client ${srcEp} queried DNS resolver ${dstEp} (${s.info}) to translate a domain name into a routable IP address.`,
+      keyConcept: 'DNS serves as the Internet directory over connectionless UDP port 53 in a single round-trip.',
+      takeaways: [
+        'Queries and responses pair via a 16-bit Transaction ID',
+        'A records map to IPv4, AAAA to IPv6, and TXT carries arbitrary text (sometimes abused for DNS tunneling)',
+        s.dpiMethod ? `DPI classification: ${s.dpiMethod}` : 'Uses RFC 1035 label pointer compression',
+      ],
+      securityNote,
+    }
+  }
+
+  if (proto === 'HTTP' || proto === 'HTTP2') {
+    const isResp = s.info.startsWith('HTTP/')
+    return {
+      headline: isResp ? `HTTP Application Response (${s.info.slice(0, 28)})` : `Cleartext HTTP Request (${s.info.split(' ').slice(0, 2).join(' ')})`,
+      story: isResp
+        ? `Server ${srcEp} returned a cleartext HTTP response (${s.info}) carrying status headers and payload over TCP.`
+        : `Client ${srcEp} sent a cleartext HTTP request to ${dstEp} (${s.info}).${s.dstPort !== 80 ? ` Detected via port-agnostic payload DPI on non-standard port ${s.dstPort}.` : ''}`,
+      keyConcept: 'HTTP/1.x is a human-readable OSI Layer 7 protocol riding over reliable TCP streams, delimited by \\r\\n\\r\\n.',
+      takeaways: [
+        `Identification method: ${s.dpiMethod || 'HTTP/1.x syntax signature'}`,
+        'Headers, URLs, cookies, and form bodies are exposed in plaintext unless wrapped in TLS',
+        'Use Follow Stream to inspect the full reassembled request/response conversation',
+      ],
+      securityNote,
+    }
+  }
+
+  if (proto.startsWith('TLS') || proto.startsWith('SSL')) {
+    const isCH = s.info.includes('Client Hello')
+    const isSH = s.info.includes('Server Hello')
+    return {
+      headline: isCH
+        ? `${proto} Handshake Step 1: Client Hello`
+        : isSH
+          ? `${proto} Handshake Step 2: Server Hello`
+          : `${proto} Encrypted Record`,
+      story: isCH
+        ? `Client ${srcEp} initiated a TLS handshake with ${dstEp} (${s.info}), advertising cipher suites, TLS version, and cleartext SNI hostname.`
+        : isSH
+          ? `Server ${srcEp} selected the cipher suite and protocol version (${s.info}) to establish ephemeral session keys.`
+          : `Endpoints exchanged an encrypted ${proto} record (${s.info}). Application payload is high-entropy ciphertext.`,
+      keyConcept: 'TLS provides confidentiality, integrity, and X.509 authentication above TCP.',
+      takeaways: [
+        'ClientHello exposes SNI and cipher lists in cleartext, enabling JA3 client fingerprinting',
+        'Load an SSLKEYLOGFILE in WS Lab to decrypt your own HTTPS sessions in Wireshark mode',
+      ],
+      securityNote,
+    }
+  }
+
+  if (proto === 'QUIC') {
+    return {
+      headline: 'QUIC (HTTP/3) Encrypted UDP Transport Packet',
+      story: `Endpoints ${srcEp} and ${dstEp} are communicating over QUIC (${s.info}), combining transport & TLS 1.3 handshakes into 1-RTT / 0-RTT.`,
+      keyConcept: 'RFC 9000 QUIC multiplexes independent encrypted streams over UDP without TCP head-of-line blocking.',
+      takeaways: [
+        'Runs over UDP port 443 and uses Connection IDs to survive Wi-Fi / cellular IP roaming',
+        'Eliminates TCP head-of-line blocking across concurrent HTTP/3 streams',
+      ],
+      securityNote,
+    }
+  }
+
+  if (proto === 'ICMP' || proto === 'ICMPV6') {
+    return {
+      headline: `${proto} Network Control & Diagnostic Message`,
+      story: `Host ${srcEp} sent an ${proto} control packet to ${dstEp} (${s.info}), commonly used by ping, traceroute, or IPv6 NDP.`,
+      keyConcept: 'ICMP is encapsulated directly inside IP (OSI Layer 3) without TCP or UDP ports.',
+      takeaways: [
+        'Echo Request (Type 8) and Echo Reply (Type 0) measure round-trip latency (RTT)',
+        'ICMP Time Exceeded (Type 11) reveals intermediate router hops when IP TTL reaches 0',
+      ],
+      securityNote,
+    }
+  }
+
+  if (proto === 'TCP') {
+    const f = s.tcpFlags
+    const isSyn = f.includes('SYN') && !f.includes('ACK')
+    const isSynAck = f.includes('SYN') && f.includes('ACK')
+    const isFin = f.includes('FIN')
+    const isRst = f.includes('RST')
+    const isRetr = s.tcpExpert.some((e) => e.includes('Retrans'))
+
+    let headline = `TCP Control Segment [${f}]`
+    let story = `Endpoint ${srcEp} sent a TCP segment to ${dstEp} (${s.info}).`
+    if (isSyn) {
+      headline = 'TCP 3-Way Handshake Step 1 (SYN)'
+      story = `Client ${srcEp} initiated a connection to ${dstEp} (SYN=1), synchronizing initial sequence numbers and negotiating MSS/Window Scale.`
+    } else if (isSynAck) {
+      headline = 'TCP 3-Way Handshake Step 2 (SYN, ACK)'
+      story = `Server ${srcEp} accepted the connection, acknowledging the client ISN while advertising its own initial sequence number.`
+    } else if (isRst) {
+      headline = 'TCP Abrupt Connection Reset (RST)'
+      story = `${srcEp} sent RST to ${dstEp} — typically indicating a closed port, firewall rejection, or aborted socket.`
+    } else if (isFin) {
+      headline = 'TCP Graceful Teardown (FIN)'
+      story = `${srcEp} signaled no more outbound application data, initiating half-close teardown (FIN consumes 1 sequence byte).`
+    } else if (isRetr) {
+      headline = 'TCP Retransmission (Loss Recovery)'
+      story = `Sender ${srcEp} retransmitted previously sent sequence bytes to guarantee reliable, ordered delivery over lossy IP links.`
+    } else if (f === 'ACK') {
+      headline = 'TCP Acknowledgment Segment (ACK)'
+      story = `${srcEp} cumulatively acknowledged received bytes up to Ack and advertised its latest receive window.`
+    }
+
+    return {
+      headline,
+      story,
+      keyConcept: 'TCP guarantees reliable, ordered byte streams via 3-way handshakes, Seq/Ack numbers, sliding windows, and retransmission.',
+      takeaways: [
+        'Both SYN and FIN flags consume 1 sequence number even with 0 payload bytes',
+        s.streamId !== null ? `Part of TCP Stream #${s.streamId} — open Streams for the full Sequence Diagram` : 'Inspect the 32-bit RFC 9293 header diagram below',
+      ],
+      securityNote,
+    }
+  }
+
+  return {
+    headline: `${proto} Packet (OSI Layer ${s.osiLayer})`,
+    story: `Transmitted from ${srcEp} to ${dstEp} (${s.length} bytes on wire). Summary: ${s.info}.`,
+    keyConcept: `Encapsulated across ${s.protocols.map((p) => p.toUpperCase()).join(' → ')}.`,
+    takeaways: [
+      `Protocol stack: ${s.protocols.join(' : ')}`,
+      s.dpiMethod ? `DPI classification: ${s.dpiMethod}` : 'Select any layer below to inspect its wire header',
+    ],
+    securityNote,
+  }
+}
+
+export function narratePacket(detail: PacketDetail, lang: 'zh' | 'en' = 'zh'): PacketNarration {
+  return lang === 'en' ? narratePacketEn(detail) : narratePacketZh(detail)
+}
+
 export function narratePacketZh(detail: PacketDetail): PacketNarration {
   const s = detail.summary
   const proto = s.protocol.toUpperCase()
   const srcEp = s.srcPort ? `${s.src}:${s.srcPort}` : s.src
   const dstEp = s.dstPort ? `${s.dst}:${s.dstPort}` : s.dst
-  const takeaways: string[] = []
   let securityNote: string | undefined
 
   if (s.alertSeverity) {
-    securityNote = `安全 IDS 已标记该帧 [${s.alertSeverity}]：${s.alertRules.join('、')}，建议前往「安全雷达」查看取证详情。`
+    securityNote = `Security IDS 已标记该帧 [${s.alertSeverity}]：${s.alertRules.join('、')}，可在 Security 视图查看取证详情。`
   }
 
   if (proto === 'ARP') {
@@ -682,7 +891,8 @@ function macStr(b: Uint8Array, off: number): string {
     .join(':')
 }
 
-export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[] {
+export function extractHeaderDiagrams(detail: PacketDetail, lang: 'zh' | 'en' = 'zh'): HeaderDiagramSpec[] {
+  const isZh = lang === 'zh'
   const bytes = hexToBytes(detail.rawHex || '')
   const specs: HeaderDiagramSpec[] = []
 
@@ -695,8 +905,10 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
       const etMap: Record<number, string> = { 0x0800: 'IPv4', 0x0806: 'ARP', 0x86dd: 'IPv6', 0x8100: 'VLAN' }
       specs.push({
         protocol: 'Ethernet II',
-        titleZh: 'L2 以太网 II 帧首部（14 字节）',
-        subtitle: '局域网数据链路层封装：依靠 48 位 MAC 地址在同网段设备/网关间转发',
+        titleZh: isZh ? 'L2 Ethernet II Frame Header (14 Bytes)' : 'L2 Ethernet II Frame Header (14 Bytes)',
+        subtitle: isZh
+          ? '局域网数据链路层封装：依靠 48-bit MAC 地址在同网段设备/网关间转发'
+          : 'LAN Data-Link framing using 48-bit hardware MAC addresses and 16-bit EtherType',
         osiLayer: 2,
         totalBytes: 14,
         rows: [
@@ -704,8 +916,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'eth-dst',
               fieldKey: 'eth.dst',
-              zhName: '目的 MAC 地址 (48位 / 6B)',
-              enShort: 'Destination MAC',
+              zhName: '目的 MAC (Destination MAC · 48b)',
+              enShort: 'Destination MAC (48b / 6B)',
               bitSpan: 32,
               valueText: macStr(bytes, off),
               rawHex: sliceHex(bytes, off, 6),
@@ -719,8 +931,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'eth-src',
               fieldKey: 'eth.src',
-              zhName: '源 MAC 地址 (48位 / 6B)',
-              enShort: 'Source MAC',
+              zhName: '源 MAC (Source MAC · 48b)',
+              enShort: 'Source MAC (48b / 6B)',
               bitSpan: 22,
               valueText: macStr(bytes, off + 6),
               rawHex: sliceHex(bytes, off + 6, 6),
@@ -732,8 +944,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'eth-type',
               fieldKey: 'eth.type',
-              zhName: '类型 (16位)',
-              enShort: 'EtherType',
+              zhName: 'EtherType (16b)',
+              enShort: 'EtherType (16b)',
               bitSpan: 10,
               valueText: `0x${et.toString(16).padStart(4, '0')} (${etMap[et] || 'Other'})`,
               rawHex: sliceHex(bytes, off + 12, 2),
@@ -755,8 +967,10 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
       const op = u16(bytes, off + 6)
       specs.push({
         protocol: 'ARP',
-        titleZh: 'L2/L3 ARP 地址解析报文（28 字节）',
-        subtitle: '将 32 位 IPv4 地址解析为 48 位以太网 MAC 地址',
+        titleZh: isZh ? 'L2/L3 ARP Packet Header (28 Bytes)' : 'L2/L3 ARP Packet Header (28 Bytes)',
+        subtitle: isZh
+          ? 'RFC 826：将 32-bit IPv4 地址解析为 48-bit Ethernet MAC 地址'
+          : 'RFC 826 Address Resolution Protocol mapping 32-bit IPv4 to 48-bit Ethernet MAC',
         osiLayer: 2,
         totalBytes: 28,
         rows: [
@@ -764,8 +978,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'arp-htype',
               fieldKey: 'arp.opcode',
-              zhName: '硬件类型 (16位)',
-              enShort: 'Hardware Type',
+              zhName: 'Hardware Type (16b)',
+              enShort: 'Hardware Type (16b)',
               bitSpan: 16,
               valueText: `${htype} (Ethernet)`,
               rawHex: sliceHex(bytes, off, 2),
@@ -777,8 +991,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'arp-ptype',
               fieldKey: 'eth.type',
-              zhName: '协议类型 (16位)',
-              enShort: 'Protocol Type',
+              zhName: 'Protocol Type (16b)',
+              enShort: 'Protocol Type (16b)',
               bitSpan: 16,
               valueText: `0x${ptype.toString(16).padStart(4, '0')} (IPv4)`,
               rawHex: sliceHex(bytes, off + 2, 2),
@@ -792,10 +1006,10 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'arp-hlen',
               fieldKey: 'arp.opcode',
-              zhName: '硬件长 (8位)',
-              enShort: 'HLEN',
+              zhName: 'HLEN (8b)',
+              enShort: 'HLEN (8b)',
               bitSpan: 8,
-              valueText: `${hlen}B`,
+              valueText: `${hlen} B`,
               rawHex: sliceHex(bytes, off + 4, 1),
               rawBin: toBin(hlen, 8),
               byteOffset: off + 4,
@@ -805,10 +1019,10 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'arp-plen',
               fieldKey: 'arp.opcode',
-              zhName: '协议长 (8位)',
-              enShort: 'PLEN',
+              zhName: 'PLEN (8b)',
+              enShort: 'PLEN (8b)',
               bitSpan: 8,
-              valueText: `${plen}B`,
+              valueText: `${plen} B`,
               rawHex: sliceHex(bytes, off + 5, 1),
               rawBin: toBin(plen, 8),
               byteOffset: off + 5,
@@ -818,10 +1032,10 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'arp-op',
               fieldKey: 'arp.opcode',
-              zhName: '操作码 Opcode (16位)',
-              enShort: 'Operation',
+              zhName: 'Opcode 操作码 (16b)',
+              enShort: 'Opcode (16b)',
               bitSpan: 16,
-              valueText: op === 1 ? '1 (ARP 请求 Request)' : op === 2 ? '2 (ARP 响应 Reply)' : String(op),
+              valueText: op === 1 ? '1 (Request)' : op === 2 ? '2 (Reply)' : String(op),
               rawHex: sliceHex(bytes, off + 6, 2),
               rawBin: toBin(op, 16),
               byteOffset: off + 6,
@@ -833,8 +1047,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'arp-sha',
               fieldKey: 'arp.src.hw_mac',
-              zhName: '发送方 MAC (48位)',
-              enShort: 'Sender MAC',
+              zhName: 'Sender MAC (48b)',
+              enShort: 'Sender MAC (48b)',
               bitSpan: 18,
               valueText: macStr(bytes, off + 8),
               rawHex: sliceHex(bytes, off + 8, 6),
@@ -846,8 +1060,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'arp-spa',
               fieldKey: 'arp.src.proto_ipv4',
-              zhName: '发送方 IP (32位)',
-              enShort: 'Sender IP',
+              zhName: 'Sender IP (32b)',
+              enShort: 'Sender IP (32b)',
               bitSpan: 14,
               valueText: ip4Str(bytes, off + 14),
               rawHex: sliceHex(bytes, off + 14, 4),
@@ -861,8 +1075,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'arp-tha',
               fieldKey: 'arp.src.hw_mac',
-              zhName: '目标 MAC (48位)',
-              enShort: 'Target MAC',
+              zhName: 'Target MAC (48b)',
+              enShort: 'Target MAC (48b)',
               bitSpan: 18,
               valueText: macStr(bytes, off + 18),
               rawHex: sliceHex(bytes, off + 18, 6),
@@ -874,8 +1088,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'arp-tpa',
               fieldKey: 'arp.dst.proto_ipv4',
-              zhName: '目标 IP (32位)',
-              enShort: 'Target IP',
+              zhName: 'Target IP (32b)',
+              enShort: 'Target IP (32b)',
               bitSpan: 14,
               valueText: ip4Str(bytes, off + 24),
               rawHex: sliceHex(bytes, off + 24, 4),
@@ -905,8 +1119,12 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
 
       specs.push({
         protocol: 'IPv4',
-        titleZh: `L3 IPv4 经典 32 位首部（${ihl * 4} 字节，5 行 × 32 位）`,
-        subtitle: 'RFC 791 网络层核心首部：负责全网路由寻址、防环路（TTL）、分片重组与上层协议分发',
+        titleZh: isZh
+          ? `L3 IPv4 32-bit Header (${ihl * 4} Bytes · 5 × 32-bit Words)`
+          : `L3 IPv4 32-bit Header (${ihl * 4} Bytes · RFC 791)`,
+        subtitle: isZh
+          ? 'RFC 791 网络层首部：负责全网路由寻址、防环路 (TTL)、分片重组与上层协议分发'
+          : 'RFC 791 Network Layer header: global routing, hop-limit loop prevention (TTL), fragmentation & protocol demux',
         osiLayer: 3,
         totalBytes: ihl * 4,
         rows: [
@@ -914,7 +1132,7 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'ip-ver',
               fieldKey: 'ip.version',
-              zhName: '版本',
+              zhName: 'Ver',
               enShort: 'Ver (4b)',
               bitSpan: 4,
               valueText: `${ver}`,
@@ -927,7 +1145,7 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'ip-ihl',
               fieldKey: 'ip.hdr_len',
-              zhName: '首部长度',
+              zhName: 'IHL',
               enShort: 'IHL (4b)',
               bitSpan: 4,
               valueText: `${ihl} (${ihl * 4}B)`,
@@ -940,8 +1158,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'ip-tos',
               fieldKey: 'ip.dsfield',
-              zhName: '区分服务 DSCP/ECN',
-              enShort: 'TOS (8b)',
+              zhName: 'DSCP / ECN',
+              enShort: 'DSCP/ECN (8b)',
               bitSpan: 8,
               valueText: `0x${tos.toString(16).padStart(2, '0')}`,
               rawHex: sliceHex(bytes, off + 1, 1),
@@ -953,10 +1171,10 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'ip-len',
               fieldKey: 'ip.len',
-              zhName: '总长度 Total Length (16位)',
-              enShort: 'Total Len',
+              zhName: 'Total Length 总长度 (16b)',
+              enShort: 'Total Length (16b)',
               bitSpan: 16,
-              valueText: `${totLen} 字节`,
+              valueText: `${totLen} B`,
               rawHex: sliceHex(bytes, off + 2, 2),
               rawBin: toBin(totLen, 16),
               byteOffset: off + 2,
@@ -968,8 +1186,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'ip-id',
               fieldKey: 'ip.id',
-              zhName: '标识 Identification (16位)',
-              enShort: 'ID',
+              zhName: 'Identification (16b)',
+              enShort: 'Identification (16b)',
               bitSpan: 16,
               valueText: `0x${ident.toString(16).padStart(4, '0')} (${ident})`,
               rawHex: sliceHex(bytes, off + 4, 2),
@@ -981,8 +1199,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'ip-flags',
               fieldKey: 'ip.flags',
-              zhName: '标志 (3位)',
-              enShort: 'DF/MF',
+              zhName: 'Flags (3b)',
+              enShort: 'Flags (3b)',
               bitSpan: 5,
               valueText: `DF=${(flags3 >> 1) & 1} MF=${flags3 & 1}`,
               rawHex: `0x${flags3.toString(16)}`,
@@ -994,10 +1212,10 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'ip-frag',
               fieldKey: 'ip.flags',
-              zhName: '片偏移 Fragment Offset (13位)',
-              enShort: 'Frag Offset',
+              zhName: 'Fragment Offset 片偏移 (13b)',
+              enShort: 'Fragment Offset (13b)',
               bitSpan: 11,
-              valueText: `${fragOff} 字节`,
+              valueText: `${fragOff} B`,
               rawHex: sliceHex(bytes, off + 6, 2),
               rawBin: toBin(flFrag & 0x1fff, 13),
               byteOffset: off + 6,
@@ -1009,10 +1227,10 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'ip-ttl',
               fieldKey: 'ip.ttl',
-              zhName: '生存时间 TTL (8位)',
-              enShort: 'TTL',
+              zhName: 'TTL 生存时间 (8b)',
+              enShort: 'Time To Live (8b)',
               bitSpan: 8,
-              valueText: `${ttl} 跳`,
+              valueText: `${ttl} hops`,
               rawHex: sliceHex(bytes, off + 8, 1),
               rawBin: toBin(ttl, 8),
               byteOffset: off + 8,
@@ -1022,8 +1240,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'ip-proto',
               fieldKey: 'ip.proto',
-              zhName: '协议 (8位)',
-              enShort: 'Proto',
+              zhName: 'Protocol (8b)',
+              enShort: 'Protocol (8b)',
               bitSpan: 8,
               valueText: `${proto} (${protoMap[proto] || 'Other'})`,
               rawHex: sliceHex(bytes, off + 9, 1),
@@ -1035,8 +1253,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'ip-chk',
               fieldKey: 'ip.checksum',
-              zhName: '首部校验和 Header Checksum (16位)',
-              enShort: 'Checksum',
+              zhName: 'Header Checksum (16b)',
+              enShort: 'Header Checksum (16b)',
               bitSpan: 16,
               valueText: `0x${chk.toString(16).padStart(4, '0')}`,
               rawHex: sliceHex(bytes, off + 10, 2),
@@ -1050,8 +1268,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'ip-src',
               fieldKey: 'ip.src',
-              zhName: '源 IP 地址 Source Address (32位)',
-              enShort: 'Source IP',
+              zhName: 'Source IP 源地址 (32b)',
+              enShort: 'Source IP Address (32b)',
               bitSpan: 32,
               valueText: ip4Str(bytes, off + 12),
               rawHex: sliceHex(bytes, off + 12, 4),
@@ -1065,8 +1283,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'ip-dst',
               fieldKey: 'ip.dst',
-              zhName: '目的 IP 地址 Destination Address (32位)',
-              enShort: 'Destination IP',
+              zhName: 'Destination IP 目的地址 (32b)',
+              enShort: 'Destination IP Address (32b)',
               bitSpan: 32,
               valueText: ip4Str(bytes, off + 16),
               rawHex: sliceHex(bytes, off + 16, 4),
@@ -1092,11 +1310,17 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
       const chk = u16(bytes, off + 16)
       const urg = u16(bytes, off + 18)
       const flagNames = ['URG', 'ACK', 'PSH', 'RST', 'SYN', 'FIN'].filter((_, i) => (flags6 >> (5 - i)) & 1)
+      const relSeq = detail.layers.find((l) => l.protocol === 'TCP')?.fields.find((f) => f.key === 'tcp.seq')?.value ?? seq
+      const relAck = detail.layers.find((l) => l.protocol === 'TCP')?.fields.find((f) => f.key === 'tcp.ack')?.value ?? ack
 
       specs.push({
         protocol: 'TCP',
-        titleZh: `L4 TCP 经典 32 位首部（${doff * 4} 字节，对应教材图 12-3）`,
-        subtitle: 'RFC 9293 可靠字节流传输首部：序号/确认号保障不丢不乱，标志位控握手，窗口控流量',
+        titleZh: isZh
+          ? `L4 TCP 32-bit Header (${doff * 4} Bytes · RFC 9293)`
+          : `L4 TCP 32-bit Header (${doff * 4} Bytes · RFC 9293)`,
+        subtitle: isZh
+          ? 'RFC 9293 可靠字节流首部：Seq/Ack 保障按序不丢，Flags 控制连接状态，Window 控制滑动窗口流量'
+          : 'RFC 9293 reliable byte-stream header: Seq/Ack ordering, state Flags, and sliding-window flow control',
         osiLayer: 4,
         totalBytes: doff * 4,
         rows: [
@@ -1104,8 +1328,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'tcp-sp',
               fieldKey: 'tcp.srcport',
-              zhName: '源端口 Source Port (16位)',
-              enShort: 'Src Port',
+              zhName: 'Source Port 源端口 (16b)',
+              enShort: 'Source Port (16b)',
               bitSpan: 16,
               valueText: `${sp}`,
               rawHex: sliceHex(bytes, off, 2),
@@ -1117,8 +1341,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'tcp-dp',
               fieldKey: 'tcp.dstport',
-              zhName: '目的端口 Dest Port (16位)',
-              enShort: 'Dst Port',
+              zhName: 'Destination Port 目的端口 (16b)',
+              enShort: 'Destination Port (16b)',
               bitSpan: 16,
               valueText: `${dp}`,
               rawHex: sliceHex(bytes, off + 2, 2),
@@ -1132,10 +1356,10 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'tcp-seq',
               fieldKey: 'tcp.seq',
-              zhName: '序列号 Sequence Number (32位)',
-              enShort: 'Seq',
+              zhName: 'Sequence Number 序列号 (32b)',
+              enShort: 'Sequence Number (32b)',
               bitSpan: 32,
-              valueText: `原始 ${seq} (相对 Seq=${detail.layers.find((l) => l.protocol === 'TCP')?.fields.find((f) => f.key === 'tcp.seq')?.value ?? seq})`,
+              valueText: `Raw ${seq} (Rel Seq=${relSeq})`,
               rawHex: sliceHex(bytes, off + 4, 4),
               rawBin: toBin(seq, 32),
               byteOffset: off + 4,
@@ -1147,10 +1371,10 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'tcp-ack',
               fieldKey: 'tcp.ack',
-              zhName: '确认号 Acknowledgment Number (32位)',
-              enShort: 'Ack',
+              zhName: 'Acknowledgment Number 确认号 (32b)',
+              enShort: 'Acknowledgment Number (32b)',
               bitSpan: 32,
-              valueText: `原始 ${ack} (相对 Ack=${detail.layers.find((l) => l.protocol === 'TCP')?.fields.find((f) => f.key === 'tcp.ack')?.value ?? ack})`,
+              valueText: `Raw ${ack} (Rel Ack=${relAck})`,
               rawHex: sliceHex(bytes, off + 8, 4),
               rawBin: toBin(ack, 32),
               byteOffset: off + 8,
@@ -1162,8 +1386,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'tcp-doff',
               fieldKey: 'tcp.hdr_len',
-              zhName: '首部长度',
-              enShort: 'Off(4b)',
+              zhName: 'Data Off',
+              enShort: 'Off (4b)',
               bitSpan: 5,
               valueText: `${doff} (${doff * 4}B)`,
               rawHex: `0x${doff.toString(16)}`,
@@ -1175,8 +1399,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'tcp-flags',
               fieldKey: 'tcp.flags',
-              zhName: '控制标志位 (URG/ACK/PSH/RST/SYN/FIN)',
-              enShort: 'Flags',
+              zhName: 'Flags (URG/ACK/PSH/RST/SYN/FIN)',
+              enShort: 'Control Flags (6b)',
               bitSpan: 11,
               valueText: flagNames.length ? flagNames.join(' · ') : 'NONE (0x00)',
               rawHex: sliceHex(bytes, off + 12, 2),
@@ -1188,10 +1412,10 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'tcp-win',
               fieldKey: 'tcp.window_size',
-              zhName: '滑动窗口大小 Window (16位)',
-              enShort: 'Window',
+              zhName: 'Window 接收窗口 (16b)',
+              enShort: 'Window Size (16b)',
               bitSpan: 16,
-              valueText: `${win} 字节`,
+              valueText: `${win} B`,
               rawHex: sliceHex(bytes, off + 14, 2),
               rawBin: toBin(win, 16),
               byteOffset: off + 14,
@@ -1203,8 +1427,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'tcp-chk',
               fieldKey: 'tcp.checksum',
-              zhName: 'TCP 校验和 (16位)',
-              enShort: 'Checksum',
+              zhName: 'Checksum (16b)',
+              enShort: 'Checksum (16b)',
               bitSpan: 16,
               valueText: `0x${chk.toString(16).padStart(4, '0')}`,
               rawHex: sliceHex(bytes, off + 16, 2),
@@ -1216,8 +1440,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'tcp-urg',
               fieldKey: 'tcp.flags',
-              zhName: '紧急指针 Urgent Pointer (16位)',
-              enShort: 'Urgent',
+              zhName: 'Urgent Pointer (16b)',
+              enShort: 'Urgent Pointer (16b)',
               bitSpan: 16,
               valueText: `${urg}`,
               rawHex: sliceHex(bytes, off + 18, 2),
@@ -1238,8 +1462,10 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
       const chk = u16(bytes, off + 6)
       specs.push({
         protocol: 'UDP',
-        titleZh: 'L4 UDP 极简 32 位首部（仅 8 字节！）',
-        subtitle: 'RFC 768 无连接传输：没有握手、没有序号、没有重传，极致低延迟（对比 TCP 的 20 字节首部）',
+        titleZh: isZh ? 'L4 UDP Minimal Header (8 Bytes · RFC 768)' : 'L4 UDP Minimal Header (8 Bytes · RFC 768)',
+        subtitle: isZh
+          ? 'RFC 768 无连接传输：无握手、无序号、无重传，极致低延迟（对比 TCP 20B 首部）'
+          : 'RFC 768 stateless datagram header: zero handshake, zero sequence overhead, minimal latency',
         osiLayer: 4,
         totalBytes: 8,
         rows: [
@@ -1247,8 +1473,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'udp-sp',
               fieldKey: 'udp.srcport',
-              zhName: '源端口 Source Port (16位)',
-              enShort: 'Src Port',
+              zhName: 'Source Port 源端口 (16b)',
+              enShort: 'Source Port (16b)',
               bitSpan: 16,
               valueText: `${sp}`,
               rawHex: sliceHex(bytes, off, 2),
@@ -1260,8 +1486,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'udp-dp',
               fieldKey: 'udp.dstport',
-              zhName: '目的端口 Dest Port (16位)',
-              enShort: 'Dst Port',
+              zhName: 'Destination Port 目的端口 (16b)',
+              enShort: 'Destination Port (16b)',
               bitSpan: 16,
               valueText: `${dp}`,
               rawHex: sliceHex(bytes, off + 2, 2),
@@ -1275,10 +1501,10 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'udp-len',
               fieldKey: 'udp.length',
-              zhName: 'UDP 总长度 (16位)',
-              enShort: 'Length',
+              zhName: 'Length 总长度 (16b)',
+              enShort: 'Length (16b)',
               bitSpan: 16,
-              valueText: `${ulen} 字节 (首部8 + 载荷${Math.max(0, ulen - 8)})`,
+              valueText: `${ulen} B (8 + ${Math.max(0, ulen - 8)})`,
               rawHex: sliceHex(bytes, off + 4, 2),
               rawBin: toBin(ulen, 16),
               byteOffset: off + 4,
@@ -1288,8 +1514,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'udp-chk',
               fieldKey: 'tcp.checksum',
-              zhName: '校验和 Checksum (16位)',
-              enShort: 'Checksum',
+              zhName: 'Checksum (16b)',
+              enShort: 'Checksum (16b)',
               bitSpan: 16,
               valueText: `0x${chk.toString(16).padStart(4, '0')}`,
               rawHex: sliceHex(bytes, off + 6, 2),
@@ -1313,8 +1539,10 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
       const isResp = (fl >> 15) & 1
       specs.push({
         protocol: 'DNS',
-        titleZh: 'L7 DNS 报文固定首部（12 字节）',
-        subtitle: 'RFC 1035：包含 16 位事务 ID、查询/响应标志与四类资源记录计数',
+        titleZh: isZh ? 'L7 DNS Fixed Header (12 Bytes · RFC 1035)' : 'L7 DNS Fixed Header (12 Bytes · RFC 1035)',
+        subtitle: isZh
+          ? 'RFC 1035：包含 16-bit Transaction ID、QR/Opcode/RCODE 标志与四类 RR 计数'
+          : 'RFC 1035 fixed header: 16-bit Transaction ID, QR/Opcode/RCODE flags, and RR section counts',
         osiLayer: 7,
         totalBytes: 12,
         rows: [
@@ -1322,8 +1550,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'dns-id',
               fieldKey: 'dns.id',
-              zhName: '事务 ID (16位)',
-              enShort: 'Transaction ID',
+              zhName: 'Transaction ID (16b)',
+              enShort: 'Transaction ID (16b)',
               bitSpan: 16,
               valueText: `0x${txid.toString(16).padStart(4, '0')}`,
               rawHex: sliceHex(bytes, off, 2),
@@ -1335,10 +1563,10 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'dns-fl',
               fieldKey: 'dns.qry.name',
-              zhName: '标志 Flags (16位)',
-              enShort: 'QR/Opcode/RCODE',
+              zhName: 'Flags (QR/Opcode/RCODE)',
+              enShort: 'Flags (QR/Opcode/RCODE)',
               bitSpan: 16,
-              valueText: `0x${fl.toString(16).padStart(4, '0')} (${isResp ? '响应 Response' : '查询 Query'})`,
+              valueText: `0x${fl.toString(16).padStart(4, '0')} (${isResp ? 'Response' : 'Query'})`,
               rawHex: sliceHex(bytes, off + 2, 2),
               rawBin: toBin(fl, 16),
               byteOffset: off + 2,
@@ -1350,10 +1578,10 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'dns-qd',
               fieldKey: 'dns.qry.name',
-              zhName: '问题数 QDCOUNT',
-              enShort: 'Questions',
+              zhName: 'Questions (QDCOUNT)',
+              enShort: 'Questions (QDCOUNT)',
               bitSpan: 16,
-              valueText: `${qd} 条查询`,
+              valueText: `${qd}`,
               rawHex: sliceHex(bytes, off + 4, 2),
               rawBin: toBin(qd, 16),
               byteOffset: off + 4,
@@ -1363,10 +1591,10 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'dns-an',
               fieldKey: 'dns.a',
-              zhName: '回答数 ANCOUNT',
-              enShort: 'Answers',
+              zhName: 'Answers (ANCOUNT)',
+              enShort: 'Answers (ANCOUNT)',
               bitSpan: 16,
-              valueText: `${an} 条回答`,
+              valueText: `${an}`,
               rawHex: sliceHex(bytes, off + 6, 2),
               rawBin: toBin(an, 16),
               byteOffset: off + 6,
@@ -1378,8 +1606,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'dns-ns',
               fieldKey: 'dns.qry.name',
-              zhName: '权威记录数 NSCOUNT',
-              enShort: 'Authority',
+              zhName: 'Authority (NSCOUNT)',
+              enShort: 'Authority (NSCOUNT)',
               bitSpan: 16,
               valueText: `${ns}`,
               rawHex: sliceHex(bytes, off + 8, 2),
@@ -1391,8 +1619,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'dns-ar',
               fieldKey: 'dns.qry.name',
-              zhName: '附加记录数 ARCOUNT',
-              enShort: 'Additional',
+              zhName: 'Additional (ARCOUNT)',
+              enShort: 'Additional (ARCOUNT)',
               bitSpan: 16,
               valueText: `${ar}`,
               rawHex: sliceHex(bytes, off + 10, 2),
@@ -1414,8 +1642,10 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
       const seq = u16(bytes, off + 6)
       specs.push({
         protocol: 'ICMP',
-        titleZh: 'L3 ICMP 控制报文首部（8 字节）',
-        subtitle: 'Ping / Traceroute 核心协议：直接嵌套在 IPv4 载荷中',
+        titleZh: isZh ? 'L3 ICMP Control Header (8 Bytes · RFC 792)' : 'L3 ICMP Control Header (8 Bytes · RFC 792)',
+        subtitle: isZh
+          ? 'Ping / Traceroute 核心协议：直接嵌套在 IPv4 载荷中'
+          : 'RFC 792 Ping / Traceroute diagnostic header encapsulated inside IPv4',
         osiLayer: 3,
         totalBytes: 8,
         rows: [
@@ -1423,10 +1653,10 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'icmp-type',
               fieldKey: 'icmp.type',
-              zhName: '类型 Type (8位)',
-              enShort: 'Type',
+              zhName: 'Type (8b)',
+              enShort: 'Type (8b)',
               bitSpan: 8,
-              valueText: `${itype} (${itype === 8 ? 'Ping请求' : itype === 0 ? 'Ping应答' : '控制消息'})`,
+              valueText: `${itype} (${itype === 8 ? 'Echo Request' : itype === 0 ? 'Echo Reply' : 'Control'})`,
               rawHex: sliceHex(bytes, off, 1),
               rawBin: toBin(itype, 8),
               byteOffset: off,
@@ -1436,8 +1666,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'icmp-code',
               fieldKey: 'icmp.type',
-              zhName: '代码 Code (8位)',
-              enShort: 'Code',
+              zhName: 'Code (8b)',
+              enShort: 'Code (8b)',
               bitSpan: 8,
               valueText: `${icode}`,
               rawHex: sliceHex(bytes, off + 1, 1),
@@ -1449,8 +1679,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'icmp-chk',
               fieldKey: 'ip.checksum',
-              zhName: '校验和 Checksum (16位)',
-              enShort: 'Checksum',
+              zhName: 'Checksum (16b)',
+              enShort: 'Checksum (16b)',
               bitSpan: 16,
               valueText: `0x${chk.toString(16).padStart(4, '0')}`,
               rawHex: sliceHex(bytes, off + 2, 2),
@@ -1464,8 +1694,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'icmp-id',
               fieldKey: 'icmp.type',
-              zhName: '标识符 Identifier (16位)',
-              enShort: 'ID',
+              zhName: 'Identifier (16b)',
+              enShort: 'Identifier (16b)',
               bitSpan: 16,
               valueText: `0x${id.toString(16).padStart(4, '0')}`,
               rawHex: sliceHex(bytes, off + 4, 2),
@@ -1477,8 +1707,8 @@ export function extractHeaderDiagrams(detail: PacketDetail): HeaderDiagramSpec[]
             {
               id: 'icmp-seq',
               fieldKey: 'icmp.type',
-              zhName: '序号 Sequence (16位)',
-              enShort: 'Seq',
+              zhName: 'Sequence (16b)',
+              enShort: 'Sequence (16b)',
               bitSpan: 16,
               valueText: `${seq}`,
               rawHex: sliceHex(bytes, off + 6, 2),
@@ -1513,7 +1743,9 @@ export interface DiscoveredLesson {
 export function discoverLearningLessons(
   packets: PacketSummary[],
   streams: StreamSummary[],
+  lang: 'zh' | 'en' = 'zh',
 ): DiscoveredLesson[] {
+  const isZh = lang === 'zh'
   const lessons: DiscoveredLesson[] = []
 
   // 1. TCP Complete Lifecycle (Handshake + Data/Retransmission + FIN)
@@ -1526,33 +1758,49 @@ export function discoverLearningLessons(
     const spkts = packets.filter((p) => p.streamProto === 'tcp' && p.streamId === bestTcp.streamId)
     lessons.push({
       id: 'tcp-lifecycle',
-      badge: 'L4 传输层核心',
-      title: `TCP 完整生命周期实景剖析（流 #${bestTcp.streamId} · ${bestTcp.appProtocol}）`,
-      subtitle: `${bestTcp.client} ↔ ${bestTcp.server} · 共 ${spkts.length} 帧${bestTcp.rttMs !== null ? ` · 握手 RTT ${bestTcp.rttMs}ms` : ''}${bestTcp.retransmissions > 0 ? ` · 含 ${bestTcp.retransmissions} 次重传` : ''}`,
+      badge: isZh ? 'L4 Transport Core' : 'L4 Transport Core',
+      title: isZh
+        ? `TCP 生命周期实景剖析 (Stream #${bestTcp.streamId} · ${bestTcp.appProtocol})`
+        : `TCP Full Lifecycle Walkthrough (Stream #${bestTcp.streamId} · ${bestTcp.appProtocol})`,
+      subtitle: isZh
+        ? `${bestTcp.client} ↔ ${bestTcp.server} · ${spkts.length} frames${bestTcp.rttMs !== null ? ` · RTT ${bestTcp.rttMs}ms` : ''}${bestTcp.retransmissions > 0 ? ` · ${bestTcp.retransmissions} Retrans` : ''}`
+        : `${bestTcp.client} ↔ ${bestTcp.server} · ${spkts.length} frames${bestTcp.rttMs !== null ? ` · Handshake RTT ${bestTcp.rttMs}ms` : ''}${bestTcp.retransmissions > 0 ? ` · ${bestTcp.retransmissions} Retransmissions` : ''}`,
       color: 'cyan',
       packetNos: spkts.map((p) => p.no),
       streamRef: { proto: 'tcp', streamId: bestTcp.streamId },
       steps: spkts.slice(0, 10).map((p) => {
         let explain = p.info
         if (p.tcpFlags.includes('SYN') && !p.tcpFlags.includes('ACK')) {
-          explain = '① 三次握手第 1 步（SYN）：客户端进入 SYN_SENT 状态，发送初始序号。'
+          explain = isZh
+            ? '① 3-Way Handshake Step 1 (SYN)：客户端进入 SYN_SENT，同步初始 Seq。'
+            : '1. Handshake Step 1 (SYN): Client enters SYN_SENT and sends its Initial Sequence Number.'
         } else if (p.tcpFlags.includes('SYN') && p.tcpFlags.includes('ACK')) {
-          explain = '② 三次握手第 2 步（SYN+ACK）：服务端同意建连并回复自己的初始序号，客户端据此测出 RTT。'
+          explain = isZh
+            ? '② 3-Way Handshake Step 2 (SYN, ACK)：服务端同意建连并同步自身 ISN，据此测算 RTT。'
+            : '2. Handshake Step 2 (SYN, ACK): Server acknowledges client ISN and sends its own ISN (RTT measured).'
         } else if (p.tcpExpert.some((e) => e.includes('Retrans'))) {
-          explain = '⚠️ 可靠传输触发重传：发送方重发已发送过的序号区间，WirePulse 重组流时会自动去重！'
+          explain = isZh
+            ? '⚠️ TCP Retransmission：发送方重发已发送过的字节区间，Follow Stream 重组时会自动去重。'
+            : 'Retransmission: Sender retransmitted unacknowledged sequence bytes; stream reassembly deduplicates automatically.'
         } else if (p.tcpFlags.includes('FIN')) {
-          explain = '👋 四次挥手（FIN）：单向关闭数据通道，FIN 标志消耗 1 个序列号。'
+          explain = isZh
+            ? '👋 Graceful Close (FIN)：单向关闭数据通道，FIN 标志消耗 1 个序列号。'
+            : 'Graceful Close (FIN): Initiates half-close teardown; FIN flag consumes 1 sequence byte.'
         } else if (p.protocol === 'HTTP') {
-          explain = `📨 承载应用层明文数据：${p.info.slice(0, 72)}`
+          explain = isZh
+            ? `📨 HTTP Cleartext Payload: ${p.info.slice(0, 72)}`
+            : `HTTP Cleartext Payload: ${p.info.slice(0, 72)}`
         } else if (p.protocol.startsWith('TLS')) {
-          explain = `🔐 承载 TLS 安全握手/加密数据：${p.info.slice(0, 72)}`
+          explain = isZh
+            ? `🔐 TLS Record: ${p.info.slice(0, 72)}`
+            : `TLS Record: ${p.info.slice(0, 72)}`
         }
-        return { packetNo: p.no, label: `帧 #${p.no} [${p.protocol} ${p.tcpFlags}]`, explain }
+        return { packetNo: p.no, label: `Frame #${p.no} [${p.protocol} ${p.tcpFlags}]`, explain }
       }),
     })
   }
 
-  // 2. HTTP 明文 vs HTTPS/TLS 加密对照实验
+  // 2. HTTP vs HTTPS/TLS
   const httpPkt = packets.find((p) => p.protocol === 'HTTP')
   const tlsCh = packets.find((p) => p.protocol.startsWith('TLS') && p.info.includes('Client Hello'))
   const tlsApp = packets.find((p) => p.protocol.startsWith('TLS') && p.info.includes('Application Data'))
@@ -1560,87 +1808,105 @@ export function discoverLearningLessons(
     const steps: { packetNo: number; label: string; explain: string }[] = [
       {
         packetNo: httpPkt.no,
-        label: `明文对照：帧 #${httpPkt.no} (HTTP)`,
-        explain: `未加密 HTTP 流量：右侧 ASCII 可直接读出请求方法、路径与头部（${httpPkt.info.slice(0, 60)}），存在窃听风险。`,
+        label: isZh ? `Cleartext: Frame #${httpPkt.no} (HTTP)` : `Cleartext: Frame #${httpPkt.no} (HTTP)`,
+        explain: isZh
+          ? `未加密 HTTP 流量：ASCII 视图可直接读出请求路径与 Header (${httpPkt.info.slice(0, 60)})。`
+          : `Unencrypted HTTP: Method, URI, and headers (${httpPkt.info.slice(0, 60)}) are exposed in cleartext.`,
       },
     ]
     if (tlsCh) {
       steps.push({
         packetNo: tlsCh.no,
-        label: `加密握手：帧 #${tlsCh.no} (${tlsCh.protocol})`,
-        explain: `TLS Client Hello 阶段：明文协商密码套件与 SNI 域名（${tlsCh.info}），尚未加密业务正文。`,
+        label: `Handshake: Frame #${tlsCh.no} (${tlsCh.protocol})`,
+        explain: isZh
+          ? `TLS Client Hello：明文协商 Cipher Suites 与 SNI 域名 (${tlsCh.info})。`
+          : `TLS Client Hello: Negotiates cipher suites and exposes SNI hostname (${tlsCh.info}) before encryption.`,
       })
     }
     if (tlsApp) {
       steps.push({
         packetNo: tlsApp.no,
-        label: `密文传输：帧 #${tlsApp.no} (${tlsApp.protocol})`,
-        explain: `握手完成后 Application Data 全部变为高熵密文，中间人即使截获也无法直接还原明文！`,
+        label: `Ciphertext: Frame #${tlsApp.no} (${tlsApp.protocol})`,
+        explain: isZh
+          ? 'Application Data：握手完成后全部变为高熵密文，保障传输机密性。'
+          : 'Application Data: Payload is now high-entropy AEAD/stream ciphertext.',
       })
     }
     lessons.push({
       id: 'http-vs-tls',
-      badge: 'L6/L7 安全对照',
-      title: '明文 HTTP vs 加密 HTTPS/TLS 抓包直观对比',
-      subtitle: '同一份抓包中亲眼见证「为何必须使用 HTTPS」与「TLS 握手暴露了哪些元数据」',
+      badge: 'L6/L7 Security',
+      title: isZh ? 'Cleartext HTTP vs Encrypted TLS 抓包直观对比' : 'Cleartext HTTP vs Encrypted TLS Comparison',
+      subtitle: isZh
+        ? '同一份抓包中直观对比「为何需要 HTTPS」与「TLS ClientHello 暴露的元数据」'
+        : 'Side-by-side comparison of plaintext HTTP exposure versus TLS handshake & encrypted records',
       color: 'violet',
       packetNos: steps.map((s) => s.packetNo),
       steps,
     })
   }
 
-  // 3. DNS 域名解析之旅
+  // 3. DNS
   const dnsPkts = packets.filter((p) => p.protocol === 'DNS' || p.protocol === 'mDNS').slice(0, 6)
   if (dnsPkts.length > 0) {
     lessons.push({
       id: 'dns-journey',
-      badge: 'L7 互联网电话簿',
-      title: `DNS 域名解析实录（发现 ${dnsPkts.length} 帧）`,
-      subtitle: '观察 UDP 53 端口上「域名 → IP 地址」的一问一答过程与事务 ID 匹配',
+      badge: 'L7 DNS (UDP/53)',
+      title: isZh ? `DNS 域名解析实录 (${dnsPkts.length} frames)` : `DNS Resolution Walkthrough (${dnsPkts.length} frames)`,
+      subtitle: isZh
+        ? '观察 UDP 53 端口上 Domain → IP 的 Query/Response 配对与 Transaction ID'
+        : 'Inspect Domain-to-IP Query/Response pairing via 16-bit Transaction IDs over UDP port 53',
       color: 'emerald',
       packetNos: dnsPkts.map((p) => p.no),
       steps: dnsPkts.map((p) => ({
         packetNo: p.no,
-        label: `帧 #${p.no} (${p.info.includes('response') ? '响应' : '查询'})`,
-        explain: `${p.src} → ${p.dst}：${p.info}`,
+        label: `Frame #${p.no} (${p.info.includes('response') ? 'Response' : 'Query'})`,
+        explain: `${p.src} → ${p.dst}: ${p.info}`,
       })),
     })
   }
 
-  // 4. ARP 局域网寻址与欺骗原理
+  // 4. ARP
   const arpPkts = packets.filter((p) => p.protocol === 'ARP').slice(0, 5)
   if (arpPkts.length > 0) {
     lessons.push({
       id: 'arp-lan',
-      badge: 'L2 数据链路层',
-      title: `ARP 局域网寻址实录（发现 ${arpPkts.length} 帧）`,
-      subtitle: '理解局域网通信为何同时需要 IP 与 MAC，以及 ARP 欺骗如何劫持流量',
+      badge: 'L2 Data Link',
+      title: isZh ? `ARP 局域网寻址实录 (${arpPkts.length} frames)` : `ARP LAN Resolution & Spoofing (${arpPkts.length} frames)`,
+      subtitle: isZh
+        ? '理解局域网通信为何同时需要 IP 与 MAC，以及 ARP Spoofing 如何劫持流量'
+        : 'Understand IPv4-to-MAC resolution on Ethernet LANs and how unauthenticated ARP replies enable MITM spoofing',
       color: 'amber',
       packetNos: arpPkts.map((p) => p.no),
       steps: arpPkts.map((p) => ({
         packetNo: p.no,
-        label: `帧 #${p.no}${p.alertSeverity ? ' ⚠️ 告警' : ''}`,
+        label: `Frame #${p.no}${p.alertSeverity ? ' [ALERT]' : ''}`,
         explain: p.alertSeverity
-          ? `⚠️ 检测到 ARP 欺骗：${p.info}（同一网关 IP 出现异常 MAC 变更！）`
-          : `${p.src} → ${p.dst}：${p.info}`,
+          ? isZh
+            ? `⚠️ ARP Spoofing Alert: ${p.info}`
+            : `ARP Spoofing Alert: ${p.info} (Gateway MAC binding changed)`
+          : `${p.src} → ${p.dst}: ${p.info}`,
       })),
     })
   }
 
-  // 5. 网络攻击真实报文解剖
+  // 5. Security Lab
   const alertPkts = packets.filter((p) => p.alertSeverity === 'CRITICAL' || p.alertSeverity === 'HIGH').slice(0, 6)
   if (alertPkts.length > 0) {
     lessons.push({
       id: 'security-lab',
-      badge: '安全实战课堂',
-      title: `从真实报文中识破网络攻击（${alertPkts.length} 个典型案例）`,
-      subtitle: '点击逐条解剖 SQL 注入、明文凭证泄露、端口扫描与 DNS 隧道的底层报文特征',
+      badge: 'Security IDS Lab',
+      title: isZh
+        ? `从真实报文中识破网络攻击 (${alertPkts.length} cases)`
+        : `Network Attack Packet Forensics (${alertPkts.length} cases)`,
+      subtitle: isZh
+        ? '点击逐条解剖 SQLi、明文凭证泄露、Port Scan 与 DNS Tunneling 的底层报文特征'
+        : 'Dissect wire-level signatures of SQLi, cleartext credential leaks, port scans, and DNS tunneling',
       color: 'rose',
       packetNos: alertPkts.map((p) => p.no),
       steps: alertPkts.map((p) => ({
         packetNo: p.no,
-        label: `帧 #${p.no} [${p.alertSeverity}] ${p.alertRules[0] || ''}`,
-        explain: `${p.src} → ${p.dst} (${p.protocol})：${p.info.slice(0, 88)}`,
+        label: `Frame #${p.no} [${p.alertSeverity}] ${p.alertRules[0] || ''}`,
+        explain: `${p.src} → ${p.dst} (${p.protocol}): ${p.info.slice(0, 88)}`,
       })),
     })
   }

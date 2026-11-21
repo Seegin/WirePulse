@@ -103,10 +103,25 @@ class TestWirePulseBackend(unittest.TestCase):
         self.assertIsNotNone(followed)
         # Retransmission deduplicated -> exactly 2 turns (1 GET request, 1 200 OK response)
         self.assertEqual(len(followed["turns"]), 2)
+        self.assertFalse(followed["turns"][0]["isBinary"])
         self.assertIn("GET /api/v1/courses", followed["turns"][0]["text"])
+        self.assertIn("GET /api/v1/courses", followed["turns"][0]["ascii"])
         self.assertIn("Software and System Security", followed["turns"][1]["text"])
         # Sequence diagram captures all handshake + data + retransmission + FIN frames
         self.assertGreaterEqual(len(followed["sequence"]), 8)
+
+        # Verify encrypted TLS stream turns have isBinary=True and ZERO mojibake/U+FFFD/control chars
+        tls_streams = [s for s in streams if s["appProtocol"].startswith("TLS") and s["totalBytes"] > 0]
+        self.assertGreaterEqual(len(tls_streams), 1)
+        tls_followed = self.mgr.streams.follow_stream("tcp", tls_streams[0]["streamId"])
+        self.assertTrue(any(t["isBinary"] for t in tls_followed["turns"]))
+        for turn in tls_followed["turns"]:
+            self.assertNotIn("\ufffd", turn["text"])
+            self.assertNotIn("\ufffd", turn["ascii"])
+            for ch in turn["text"]:
+                cp = ord(ch)
+                if ch not in ("\r", "\n", "\t"):
+                    self.assertFalse(cp < 0x20 or (0x7F <= cp <= 0x9F), f"Control char leaked: {hex(cp)}")
 
     def test_05_os_process_attribution(self) -> None:
         procs = self.mgr.processes.list_processes()

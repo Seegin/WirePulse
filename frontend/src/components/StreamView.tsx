@@ -1,41 +1,78 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
   Cpu,
   Download,
   Filter,
   GitBranch,
+  KeyRound,
+  Lock,
   Search,
   Workflow,
-  ArrowRight,
-  ArrowLeft,
 } from 'lucide-react'
 import { api } from '../api'
 import type { StreamFollowData, StreamSummary } from '../types'
 import { formatBytes } from '../utils/coloring'
+import type { Lang } from '../utils/i18n'
 
 interface Props {
+  lang: Lang
   initialSelection: { proto: 'tcp' | 'udp'; streamId: number; tab?: 'stream' | 'sequence' } | null
   processFilter: { pid: number | null; name: string } | null
   onClearProcessFilter: () => void
   onJumpToPacket: (packetNo: number) => void
   onApplyFilter: (expr: string) => void
+  onOpenWsLab: () => void
+}
+
+/** Format raw hex string into classic Wireshark 16-byte Hex + ASCII dump lines */
+function formatWiresharkHexDump(hex: string, maxLines = 128): { lines: string[]; moreBytes: number } {
+  const totalBytes = Math.floor(hex.length / 2)
+  const limitBytes = Math.min(totalBytes, maxLines * 16)
+  const lines: string[] = []
+  for (let off = 0; off < limitBytes; off += 16) {
+    const end = Math.min(limitBytes, off + 16)
+    const hexLeft: string[] = []
+    const hexRight: string[] = []
+    let ascii = ''
+    for (let i = off; i < off + 16; i++) {
+      if (i < end) {
+        const pair = hex.slice(i * 2, i * 2 + 2)
+        const val = parseInt(pair, 16)
+        if (i - off < 8) hexLeft.push(pair)
+        else hexRight.push(pair)
+        ascii += val >= 32 && val <= 126 ? String.fromCharCode(val) : '.'
+      } else {
+        if (i - off < 8) hexLeft.push('  ')
+        else hexRight.push('  ')
+      }
+    }
+    const addr = off.toString(16).padStart(4, '0')
+    lines.push(`${addr}   ${hexLeft.join(' ')}  ${hexRight.join(' ')}   |${ascii}|`)
+  }
+  return { lines, moreBytes: Math.max(0, totalBytes - limitBytes) }
 }
 
 export const StreamView: React.FC<Props> = ({
+  lang,
   initialSelection,
   processFilter,
   onClearProcessFilter,
   onJumpToPacket,
   onApplyFilter,
+  onOpenWsLab,
 }) => {
+  const isZh = lang === 'zh'
   const [protoFilter, setProtoFilter] = useState<'all' | 'tcp' | 'udp'>('all')
   const [streams, setStreams] = useState<StreamSummary[]>([])
   const [selected, setSelected] = useState<{ proto: 'tcp' | 'udp'; streamId: number } | null>(null)
   const [followData, setFollowData] = useState<StreamFollowData | null>(null)
   const [subTab, setSubTab] = useState<'stream' | 'sequence'>('stream')
-  const [viewFmt, setViewFmt] = useState<'text' | 'hex'>('text')
+  const [viewFmt, setViewFmt] = useState<'ascii' | 'utf8' | 'hex'>('ascii')
   const [searchTerm, setSearchTerm] = useState('')
+  const [expandedTurns, setExpandedTurns] = useState<Record<number, boolean>>({})
 
   useEffect(() => {
     api
@@ -57,30 +94,71 @@ export const StreamView: React.FC<Props> = ({
       setFollowData(null)
       return
     }
+    setExpandedTurns({})
     api
       .followStream(selected.proto, selected.streamId)
       .then((res) => {
-        if (res.ok) setFollowData(res)
+        if (res.ok) {
+          setFollowData(res)
+          // Smart default format: switch binary / encrypted TLS/QUIC/SSH streams to clean Hex Dump!
+          const protoU = (res.summary.appProtocol || '').toUpperCase()
+          const isEncProto =
+            protoU.startsWith('TLS') ||
+            protoU.startsWith('SSL') ||
+            protoU === 'QUIC' ||
+            protoU === 'SSH'
+          const anyBinary = res.turns.some((t) => t.isBinary)
+          if (isEncProto || anyBinary) {
+            setViewFmt('hex')
+          } else {
+            setViewFmt('utf8')
+          }
+        }
       })
       .catch(() => {})
   }, [selected?.proto, selected?.streamId])
+
+  const streamIsEncryptedOrBinary = useMemo(() => {
+    if (!followData) return false
+    const p = (followData.summary.appProtocol || '').toUpperCase()
+    return (
+      p.startsWith('TLS') ||
+      p.startsWith('SSL') ||
+      p === 'QUIC' ||
+      p === 'SSH' ||
+      followData.turns.some((t) => t.isBinary)
+    )
+  }, [followData])
+
+  const maxEntropy = useMemo(() => {
+    if (!followData || followData.turns.length === 0) return 0
+    return Math.max(...followData.turns.map((t) => t.entropy ?? 0))
+  }, [followData])
 
   const filteredTurns = useMemo(() => {
     if (!followData) return []
     const q = searchTerm.trim().toLowerCase()
     if (!q) return followData.turns
     return followData.turns.filter(
-      (t) => t.text.toLowerCase().includes(q) || t.hex.toLowerCase().includes(q),
+      (t) =>
+        (t.ascii || '').toLowerCase().includes(q) ||
+        t.text.toLowerCase().includes(q) ||
+        t.hex.toLowerCase().includes(q),
     )
   }, [followData, searchTerm])
 
   const downloadStream = () => {
     if (!followData) return
     const content = followData.turns
-      .map(
-        (t) =>
-          `=== ${t.direction === 'c2s' ? 'CLIENT -> SERVER' : 'SERVER -> CLIENT'} (${t.length} bytes, pkts: ${t.packetNos.join(',')}) ===\n${t.text}\n`,
-      )
+      .map((t) => {
+        const body =
+          viewFmt === 'hex'
+            ? formatWiresharkHexDump(t.hex, 512).lines.join('\n')
+            : viewFmt === 'ascii'
+              ? t.ascii || t.text
+              : t.text
+        return `=== ${t.direction === 'c2s' ? 'CLIENT -> SERVER' : 'SERVER -> CLIENT'} (${t.length} bytes, pkts: ${t.packetNos.join(',')}) ===\n${body}\n`
+      })
       .join('\n')
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -94,13 +172,13 @@ export const StreamView: React.FC<Props> = ({
   return (
     <div className="flex h-full bg-slate-50 dark:bg-[#090d14] overflow-hidden">
       {/* Left Stream List Sidebar */}
-      <div className="w-[360px] xl:w-[400px] border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0d131f] flex flex-col shrink-0">
+      <div className="w-[340px] xl:w-[385px] border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0d131f] flex flex-col shrink-0">
         <div className="p-3 border-b border-slate-200 dark:border-slate-800 space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <GitBranch className="w-4 h-4 text-cyan-500" />
               <h2 className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                TCP / UDP 通信流 ({streams.length})
+                TCP / UDP Streams ({streams.length})
               </h2>
             </div>
             <div className="flex rounded-md border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 p-0.5 text-[10.5px]">
@@ -124,7 +202,7 @@ export const StreamView: React.FC<Props> = ({
             <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-amber-500/12 border border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300">
               <span className="flex items-center gap-1.5 truncate">
                 <Cpu className="w-3.5 h-3.5 shrink-0" />
-                Tracing Process: <strong>{processFilter.name}</strong>
+                {isZh ? 'Process Filter:' : 'Tracing Process:'} <strong>{processFilter.name}</strong>
                 {processFilter.pid ? ` (PID ${processFilter.pid})` : ''}
               </span>
               <button
@@ -140,7 +218,7 @@ export const StreamView: React.FC<Props> = ({
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
           {streams.length === 0 ? (
             <div className="p-6 text-center text-xs text-slate-400">
-              No TCP/UDP streams captured yet.
+              {isZh ? '暂无 TCP/UDP 通信流。' : 'No TCP/UDP streams captured yet.'}
             </div>
           ) : (
             streams.map((s) => {
@@ -169,7 +247,7 @@ export const StreamView: React.FC<Props> = ({
                         </span>
                       )}
                     </div>
-                    <span className="text-[10px] font-mono-code text-slate-400">
+                    <span className="text-[10px] font-mono-code text-slate-400 whitespace-nowrap">
                       {s.packets} pkts · {formatBytes(s.totalBytes)}
                     </span>
                   </div>
@@ -179,7 +257,7 @@ export const StreamView: React.FC<Props> = ({
                   </div>
 
                   <div className="flex items-center justify-between mt-1.5 text-[10.5px] text-slate-500 dark:text-slate-400">
-                    <span className="truncate max-w-[180px]">
+                    <span className="truncate max-w-[175px]">
                       {s.host || (s.processName ? `Proc: ${s.processName}` : s.state)}
                     </span>
                     <div className="flex items-center gap-2 font-mono-code">
@@ -209,14 +287,18 @@ export const StreamView: React.FC<Props> = ({
         {!followData ? (
           <div className="flex-1 flex flex-col items-center justify-center text-xs text-slate-400 gap-2">
             <Workflow className="w-8 h-8 opacity-30" />
-            <span>Select a TCP or UDP stream to reassemble payload &amp; plot its flow sequence diagram</span>
+            <span>
+              {isZh
+                ? '在左侧选择任意 TCP/UDP Stream 查看重组载荷与交互式 Sequence Diagram'
+                : 'Select a TCP or UDP stream to reassemble payload & plot its flow sequence diagram'}
+            </span>
           </div>
         ) : (
           <>
             {/* Stream Detail Toolbar */}
-            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f1520]">
+            <div className="flex flex-wrap items-center justify-between gap-2.5 px-4 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f1520]">
               <div className="min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white font-mono-code">
                     {followData.summary.client} ↔ {followData.summary.server}
                   </h3>
@@ -233,11 +315,11 @@ export const StreamView: React.FC<Props> = ({
                   <span>C→S: {formatBytes(followData.summary.bytesC2S)}</span>
                   <span>S→C: {formatBytes(followData.summary.bytesS2C)}</span>
                   <span>Duration: {followData.summary.durationMs}ms</span>
-                  {followData.summary.rttMs !== null && <span>Handshake RTT: {followData.summary.rttMs}ms</span>}
+                  {followData.summary.rttMs !== null && <span>RTT: {followData.summary.rttMs}ms</span>}
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
                 <div className="flex rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 p-0.5 text-xs">
                   <button
                     onClick={() => setSubTab('stream')}
@@ -248,7 +330,7 @@ export const StreamView: React.FC<Props> = ({
                     }`}
                   >
                     <GitBranch className="w-3.5 h-3.5" />
-                    <span>流内容重组 (Follow)</span>
+                    <span>Follow Stream</span>
                   </button>
                   <button
                     onClick={() => setSubTab('sequence')}
@@ -259,7 +341,7 @@ export const StreamView: React.FC<Props> = ({
                     }`}
                   >
                     <Workflow className="w-3.5 h-3.5" />
-                    <span>交互式流时序图</span>
+                    <span>{isZh ? 'Sequence 时序图' : 'Sequence Diagram'}</span>
                   </button>
                 </div>
 
@@ -268,10 +350,9 @@ export const StreamView: React.FC<Props> = ({
                     onApplyFilter(`${followData.summary.proto}.stream == ${followData.summary.streamId}`)
                   }
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-cyan-500 text-xs font-medium text-slate-700 dark:text-slate-200 cursor-pointer"
-                  title="在报文三栏中只看该流"
                 >
                   <Filter className="w-3.5 h-3.5 text-cyan-500" />
-                  <span>过滤此流</span>
+                  <span>Filter Stream</span>
                 </button>
               </div>
             </div>
@@ -279,46 +360,48 @@ export const StreamView: React.FC<Props> = ({
             {/* Sub-tab 1: Follow Stream Conversation */}
             {subTab === 'stream' ? (
               <div className="flex-1 flex flex-col overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-2 border-b border-slate-200/80 dark:border-slate-800/80 bg-slate-50 dark:bg-[#0b101b] text-xs gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className="flex items-center gap-1.5 text-rose-600 dark:text-rose-400 font-medium">
+                {/* Format & Search Bar — clean single-line layout, never clips */}
+                <div className="flex flex-wrap items-center justify-between px-4 py-2 border-b border-slate-200/80 dark:border-slate-800/80 bg-slate-50 dark:bg-[#0b101b] text-xs gap-2">
+                  <div className="flex items-center gap-3 shrink-0 whitespace-nowrap">
+                    <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400 font-medium">
                       <ArrowRight className="w-3.5 h-3.5" /> Client → Server
                     </span>
-                    <span className="flex items-center gap-1.5 text-cyan-600 dark:text-cyan-400 font-medium">
+                    <span className="flex items-center gap-1 text-cyan-600 dark:text-cyan-400 font-medium">
                       <ArrowLeft className="w-3.5 h-3.5" /> Server → Client
                     </span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2 shrink-0 whitespace-nowrap">
                     <div className="flex items-center gap-1.5 px-2 h-7 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
                       <Search className="w-3 h-3 text-slate-400" />
                       <input
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder="Search stream..."
-                        className="bg-transparent text-xs focus:outline-none w-36 text-slate-800 dark:text-slate-100"
+                        placeholder={isZh ? 'Search stream...' : 'Search stream...'}
+                        className="bg-transparent text-xs focus:outline-none w-28 sm:w-36 text-slate-800 dark:text-slate-100"
                       />
                     </div>
-                    <div className="flex rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-0.5 text-[11px]">
-                      <button
-                        onClick={() => setViewFmt('text')}
-                        className={`px-2 py-0.5 rounded cursor-pointer ${
-                          viewFmt === 'text' ? 'bg-cyan-600 text-white' : 'text-slate-500'
-                        }`}
-                      >
-                        UTF-8 / ASCII
-                      </button>
-                      <button
-                        onClick={() => setViewFmt('hex')}
-                        className={`px-2 py-0.5 rounded cursor-pointer ${
-                          viewFmt === 'hex' ? 'bg-cyan-600 text-white' : 'text-slate-500'
-                        }`}
-                      >
-                        Hex
-                      </button>
+                    <div className="flex rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-0.5 text-[11px] font-mono-code">
+                      {([
+                        { id: 'ascii' as const, label: 'ASCII' },
+                        { id: 'utf8' as const, label: 'UTF-8' },
+                        { id: 'hex' as const, label: 'Hex Dump' },
+                      ]).map((m) => (
+                        <button
+                          key={m.id}
+                          onClick={() => setViewFmt(m.id)}
+                          className={`px-2 py-0.5 rounded cursor-pointer whitespace-nowrap ${
+                            viewFmt === m.id
+                              ? 'bg-cyan-600 text-white font-semibold'
+                              : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                          }`}
+                        >
+                          {m.label}
+                        </button>
+                      ))}
                     </div>
                     <button
                       onClick={downloadStream}
-                      className="flex items-center gap-1 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer"
+                      className="flex items-center gap-1 px-2.5 h-7 rounded border border-slate-200 dark:border-slate-700 hover:border-cyan-500 text-slate-600 dark:text-slate-300 cursor-pointer whitespace-nowrap"
                     >
                       <Download className="w-3.5 h-3.5" /> Save
                     </button>
@@ -326,13 +409,53 @@ export const StreamView: React.FC<Props> = ({
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                  {/* Smart Encrypted / Binary Payload Notice Banner */}
+                  {streamIsEncryptedOrBinary && followData.turns.length > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl border border-violet-500/35 bg-violet-500/10 text-xs text-violet-800 dark:text-violet-200">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Lock className="w-4 h-4 text-violet-500 shrink-0" />
+                        <span>
+                          {isZh ? (
+                            <>
+                              <strong>检测到加密 / 二进制载荷</strong>（{followData.summary.appProtocol}
+                              {maxEntropy > 0 ? ` · 香农熵 ${maxEntropy} bits/B` : ''}）：密文或二进制数据直接按 UTF-8 解码会产生乱码，已自动切换为 <strong>Hex Dump</strong>（或切换到安全 <strong>ASCII</strong> 模式）。
+                            </>
+                          ) : (
+                            <>
+                              <strong>Encrypted / Binary Payload Detected</strong> ({followData.summary.appProtocol}
+                              {maxEntropy > 0 ? ` · Entropy ${maxEntropy} bits/B` : ''}): Auto-switched to clean{' '}
+                              <strong>Hex Dump</strong> view to avoid mojibake.
+                            </>
+                          )}
+                        </span>
+                      </div>
+                      {(followData.summary.appProtocol || '').toUpperCase().startsWith('TLS') && (
+                        <button
+                          onClick={onOpenWsLab}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-[11px] font-semibold cursor-pointer shrink-0"
+                        >
+                          <KeyRound className="w-3 h-3" />
+                          <span>{isZh ? '导入 SSLKEYLOGFILE 解密' : 'Load SSLKEYLOGFILE'}</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   {filteredTurns.length === 0 ? (
                     <div className="text-center text-xs text-slate-400 py-10">
-                      No application payload bytes in this stream (control handshake / port scan only).
+                      {isZh
+                        ? '该 Stream 不包含应用层载荷字节（仅握手控制帧或端口扫描）。'
+                        : 'No application payload bytes in this stream (control handshake / port scan only).'}
                     </div>
                   ) : (
                     filteredTurns.map((turn, idx) => {
                       const isC2S = turn.direction === 'c2s'
+                      const isExpanded = Boolean(expandedTurns[idx])
+                      const hexResult =
+                        viewFmt === 'hex'
+                          ? formatWiresharkHexDump(turn.hex, isExpanded ? 512 : 48)
+                          : null
+
                       return (
                         <div
                           key={idx}
@@ -349,10 +472,17 @@ export const StreamView: React.FC<Props> = ({
                                 : 'border-cyan-500/20 text-cyan-700 dark:text-cyan-300'
                             }`}
                           >
-                            <span className="font-semibold">
-                              {isC2S ? 'CLIENT → SERVER' : 'SERVER → CLIENT'} ({turn.length} bytes)
-                            </span>
                             <div className="flex items-center gap-2">
+                              <span className="font-semibold">
+                                {isC2S ? 'CLIENT → SERVER' : 'SERVER → CLIENT'} ({turn.length.toLocaleString()} bytes)
+                              </span>
+                              {turn.isBinary && (
+                                <span className="text-[10px] px-1.5 py-0 rounded bg-violet-500/15 text-violet-600 dark:text-violet-300">
+                                  BINARY · H={turn.entropy}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2.5">
                               <span>t={turn.timestamp.toFixed(4)}s</span>
                               <button
                                 onClick={() => onJumpToPacket(turn.packetNos[0])}
@@ -362,13 +492,32 @@ export const StreamView: React.FC<Props> = ({
                               </button>
                             </div>
                           </div>
-                          <pre className="p-3 text-[11.5px] font-mono-code whitespace-pre-wrap break-all text-slate-800 dark:text-slate-200 max-h-96 overflow-y-auto">
-                            {viewFmt === 'text'
-                              ? turn.text
-                              : (turn.hex.match(/.{1,32}/g) || [])
-                                  .map((line, i) => `${(i * 16).toString(16).padStart(4, '0')}  ${line.match(/.{1,2}/g)?.join(' ')}`)
-                                  .join('\n')}
+
+                          <pre className="p-3 text-[11.5px] font-mono-code whitespace-pre overflow-x-auto text-slate-800 dark:text-slate-200 max-h-96 overflow-y-auto leading-relaxed">
+                            {viewFmt === 'hex' && hexResult
+                              ? hexResult.lines.join('\n')
+                              : viewFmt === 'ascii'
+                                ? turn.ascii || turn.text
+                                : turn.text}
                           </pre>
+
+                          {viewFmt === 'hex' && hexResult && hexResult.moreBytes > 0 && (
+                            <div className="px-3 py-1.5 border-t border-slate-200/60 dark:border-slate-800/70 flex items-center justify-between text-[11px] text-slate-500">
+                              <span>
+                                {isZh
+                                  ? `还有 ${hexResult.moreBytes.toLocaleString()} 字节未展开（总载荷 ${turn.length.toLocaleString()} B）`
+                                  : `${hexResult.moreBytes.toLocaleString()} more bytes in preview (total ${turn.length.toLocaleString()} B)`}
+                              </span>
+                              {!isExpanded && (
+                                <button
+                                  onClick={() => setExpandedTurns((prev) => ({ ...prev, [idx]: true }))}
+                                  className="text-cyan-600 dark:text-cyan-400 font-semibold hover:underline cursor-pointer"
+                                >
+                                  {isZh ? '展开更多 Hex' : 'Show more hex'}
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )
                     })
@@ -379,24 +528,27 @@ export const StreamView: React.FC<Props> = ({
               /* Sub-tab 2: Interactive SVG Flow Sequence Ladder Diagram */
               <div className="flex-1 overflow-auto p-5 bg-slate-50 dark:bg-[#090d14]">
                 <div className="max-w-4xl mx-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0e1422] p-5 shadow-sm">
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                     <div>
                       <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                        交互式网络流时序图（Flow Sequence Ladder Diagram）
+                        {isZh
+                          ? 'Flow Sequence Diagram（交互式流时序图）'
+                          : 'Interactive Flow Sequence / Ladder Diagram'}
                       </h4>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                        直观展示客户端与服务端之间的三次握手、数据交互、RTT 往返延迟、超时重传与四次挥手；点击任意箭头直达该帧
+                        {isZh
+                          ? '直观展示 TCP 三次握手、数据交互、RTT 耗时、重传与四次挥手；点击任意箭头直达对应 Frame'
+                          : 'Click any packet arrow to jump directly to its OSI dissection in the 3-pane browser'}
                       </p>
                     </div>
                     <div className="flex items-center gap-3 text-[10.5px]">
-                      <span className="flex items-center gap-1 text-cyan-500">● 握手/挥手</span>
-                      <span className="flex items-center gap-1 text-emerald-500">● 业务数据</span>
-                      <span className="flex items-center gap-1 text-amber-500">● 重传/乱序</span>
-                      <span className="flex items-center gap-1 text-rose-500">● RST重置</span>
+                      <span className="flex items-center gap-1 text-cyan-500">● SYN/FIN</span>
+                      <span className="flex items-center gap-1 text-emerald-500">● Payload</span>
+                      <span className="flex items-center gap-1 text-amber-500">● Retrans</span>
+                      <span className="flex items-center gap-1 text-rose-500">● RST</span>
                     </div>
                   </div>
 
-                  {/* SVG Ladder */}
                   {(() => {
                     const evs = followData.sequence
                     const rowH = 44
@@ -425,7 +577,6 @@ export const StreamView: React.FC<Props> = ({
                           </marker>
                         </defs>
 
-                        {/* Endpoint Header Boxes */}
                         <rect x={leftX - 110} y={8} width={220} height={32} rx={8} fill="#06b6d4" fillOpacity={0.14} stroke="#06b6d4" strokeWidth={1.2} />
                         <text x={leftX} y={28} textAnchor="middle" className="fill-cyan-600 dark:fill-cyan-300 font-mono-code text-[11px] font-semibold">
                           Client: {followData.summary.client}
@@ -436,11 +587,9 @@ export const StreamView: React.FC<Props> = ({
                           Server: {followData.summary.server}
                         </text>
 
-                        {/* Vertical Lifelines */}
                         <line x1={leftX} y1={42} x2={leftX} y2={svgH - 14} stroke="#475569" strokeOpacity={0.4} strokeWidth={1.5} strokeDasharray="4 4" />
                         <line x1={rightX} y1={42} x2={rightX} y2={svgH - 14} stroke="#475569" strokeOpacity={0.4} strokeWidth={1.5} strokeDasharray="4 4" />
 
-                        {/* Arrows */}
                         {evs.map((ev, i) => {
                           const y = topPad + i * rowH + 22
                           const isC2S = ev.direction === 'c2s'
@@ -469,21 +618,14 @@ export const StreamView: React.FC<Props> = ({
                                   : 'url(#arr-slate)'
 
                           return (
-                            <g
-                              key={ev.packetNo}
-                              onClick={() => onJumpToPacket(ev.packetNo)}
-                              className="cursor-pointer group"
-                            >
+                            <g key={ev.packetNo} onClick={() => onJumpToPacket(ev.packetNo)} className="cursor-pointer group">
                               <rect x={4} y={y - 18} width={svgW - 8} height={34} rx={6} className="fill-transparent group-hover:fill-cyan-500/8 transition-colors" />
-                              {/* Timestamp & Delta on left */}
                               <text x={14} y={y - 2} className="fill-slate-400 font-mono-code text-[10px]">
                                 #{ev.packetNo}
                               </text>
                               <text x={14} y={y + 11} className="fill-slate-500 font-mono-code text-[9.5px]">
                                 +{ev.deltaMs.toFixed(1)}ms
                               </text>
-
-                              {/* Arrow line */}
                               <line
                                 x1={x1}
                                 y1={y + 4}
@@ -494,19 +636,9 @@ export const StreamView: React.FC<Props> = ({
                                 strokeDasharray={isRetr ? '5 3' : undefined}
                                 markerEnd={marker}
                               />
-
-                              {/* Label above arrow */}
-                              <text
-                                x={(leftX + rightX) / 2}
-                                y={y - 3}
-                                textAnchor="middle"
-                                fill={color}
-                                className="font-mono-code text-[10.5px] font-semibold"
-                              >
+                              <text x={(leftX + rightX) / 2} y={y - 3} textAnchor="middle" fill={color} className="font-mono-code text-[10.5px] font-semibold">
                                 {ev.info.slice(0, 62)}
                               </text>
-
-                              {/* Payload badge on right */}
                               <text x={rightX + 18} y={y + 7} className="fill-slate-500 font-mono-code text-[10px]">
                                 {ev.payloadLen > 0 ? `${ev.payloadLen} B` : `[${ev.flags}]`}
                               </text>

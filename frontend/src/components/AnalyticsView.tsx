@@ -3,8 +3,10 @@ import { Activity, BarChart3, Cpu, Gauge, Globe, Network, ShieldAlert } from 'lu
 import { api } from '../api'
 import type { AnalyticsPayload } from '../types'
 import { formatBytes } from '../utils/coloring'
+import type { Lang } from '../utils/i18n'
 
 interface Props {
+  lang: Lang
   onFilterIp: (ip: string) => void
   onFilterProto: (proto: string) => void
 }
@@ -13,7 +15,8 @@ const CHART_PALETTE = [
   '#06b6d4', '#8b5cf6', '#10b981', '#f59e0b', '#f43f5e', '#0ea5e9', '#14b8a6', '#ec4899', '#6366f1',
 ]
 
-export const AnalyticsView: React.FC<Props> = ({ onFilterIp, onFilterProto }) => {
+export const AnalyticsView: React.FC<Props> = ({ lang, onFilterIp, onFilterProto }) => {
+  const isZh = lang === 'zh'
   const [data, setData] = useState<AnalyticsPayload | null>(null)
   const [hoveredNode, setHoveredNode] = useState<string | null>(null)
 
@@ -67,20 +70,20 @@ export const AnalyticsView: React.FC<Props> = ({ onFilterIp, onFilterProto }) =>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f1520] p-4">
             <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>已捕获数据帧</span>
+              <span>Captured Frames</span>
               <Activity className="w-4 h-4 text-cyan-500" />
             </div>
             <div className="text-2xl font-bold font-mono-code text-slate-900 dark:text-white mt-1.5">
               {data.status.totalPackets.toLocaleString()}
             </div>
             <div className="text-[11px] text-slate-400 mt-1 font-mono-code">
-              总字节量: {formatBytes(data.status.totalBytes)}
+              Volume: {formatBytes(data.status.totalBytes)}
             </div>
           </div>
 
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f1520] p-4">
             <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>追踪通信流</span>
+              <span>Tracked Streams</span>
               <Network className="w-4 h-4 text-violet-500" />
             </div>
             <div className="text-2xl font-bold font-mono-code text-slate-900 dark:text-white mt-1.5">
@@ -93,27 +96,27 @@ export const AnalyticsView: React.FC<Props> = ({ onFilterIp, onFilterProto }) =>
 
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f1520] p-4">
             <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>内核捕获丢包率</span>
+              <span>Kernel Drop Rate</span>
               <Gauge className="w-4 h-4 text-emerald-500" />
             </div>
             <div className="text-2xl font-bold font-mono-code text-emerald-600 dark:text-emerald-400 mt-1.5">
               {dropRate}%
             </div>
             <div className="text-[11px] text-slate-400 mt-1 font-mono-code">
-              接收: {data.status.kernelStats.recv} · 丢弃: {data.status.kernelStats.drop}
+              Recv: {data.status.kernelStats.recv} · Drop: {data.status.kernelStats.drop}
             </div>
           </div>
 
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f1520] p-4">
             <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>安全 IDS 告警</span>
+              <span>IDS Security Alerts</span>
               <ShieldAlert className="w-4 h-4 text-rose-500" />
             </div>
             <div className="text-2xl font-bold font-mono-code text-rose-600 dark:text-rose-400 mt-1.5">
               {data.status.alerts.TOTAL}
             </div>
             <div className="text-[11px] text-slate-400 mt-1 font-mono-code">
-              {data.status.alerts.CRITICAL} 严重 · {data.status.alerts.HIGH} 高危 · {data.status.alerts.MEDIUM} 中危
+              {data.status.alerts.CRITICAL} Crit · {data.status.alerts.HIGH} High · {data.status.alerts.MEDIUM} Med
             </div>
           </div>
         </div>
@@ -126,14 +129,16 @@ export const AnalyticsView: React.FC<Props> = ({ onFilterIp, onFilterProto }) =>
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <Globe className="w-4 h-4 text-cyan-500" />
-                  交互式网络通信拓扑图
+                  Network Topology
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  点击任意主机节点即可筛选其通信流量；带红色虚线外环的主机触发了安全 IDS 告警
+                  {isZh
+                    ? '点击任意节点按 IP 筛选；红色虚线外环代表触发了 Security IDS 告警的主机'
+                    : 'Click any host node to filter its traffic; red-ringed hosts triggered Security IDS alerts'}
                 </p>
               </div>
               <span className="text-[11px] font-mono-code text-slate-400">
-                {nodes.length} 台主机 · {data.topology.edges.length} 条通信链路
+                {nodes.length} hosts · {data.topology.edges.length} links
               </span>
             </div>
 
@@ -226,10 +231,10 @@ export const AnalyticsView: React.FC<Props> = ({ onFilterIp, onFilterProto }) =>
             <div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-violet-500" />
-                协议分布占比
+                Protocol Distribution
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                点击任意协议柱状条立即筛选对应数据包
+                {isZh ? '点击任意协议条自动过滤 Packet List' : 'Click any protocol bar to filter Packet List'}
               </p>
             </div>
 
