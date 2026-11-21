@@ -52,7 +52,7 @@ const INITIAL_STATUS: SessionStatus = {
 }
 
 export default function App() {
-  const [dark, setDark] = useState(true)
+  const [dark, setDark] = useState(false)
   const [lang, setLang] = useState<Lang>('zh')
   const [activeTab, setActiveTab] = useState<NavTab>('capture')
   const [status, setStatus] = useState<SessionStatus>(INITIAL_STATUS)
