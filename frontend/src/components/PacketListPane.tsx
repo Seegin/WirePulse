@@ -6,14 +6,17 @@ import {
   Cpu,
   Filter,
   GitBranch,
+  GraduationCap,
   Layers,
   ShieldAlert,
   Workflow,
 } from 'lucide-react'
 import type { PacketSummary } from '../types'
 import { getPacketRowStyle } from '../utils/coloring'
+import { UI_TEXT, type Lang } from '../utils/i18n'
 
 interface Props {
+  lang: Lang
   packets: PacketSummary[]
   totalCaptured: number
   selectedNo: number | null
@@ -24,12 +27,14 @@ interface Props {
   onFollowStream: (proto: 'tcp' | 'udp', streamId: number, initialTab?: 'stream' | 'sequence') => void
   onTraceProcess: (pid: number, name: string) => void
   onInspectWireshark: (no: number) => void
+  onOpenLearn: (no: number) => void
 }
 
 const ROW_HEIGHT = 27
 const OVERSCAN = 14
 
 export const PacketListPane: React.FC<Props> = ({
+  lang,
   packets,
   totalCaptured,
   selectedNo,
@@ -40,7 +45,9 @@ export const PacketListPane: React.FC<Props> = ({
   onFollowStream,
   onTraceProcess,
   onInspectWireshark,
+  onOpenLearn,
 }) => {
+  const t = UI_TEXT[lang]
   const scrollRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportH, setViewportH] = useState(320)
@@ -56,7 +63,6 @@ export const PacketListPane: React.FC<Props> = ({
     return () => ro.disconnect()
   }, [])
 
-  // Auto-scroll to bottom when live packets stream in (only when capturing / growing)
   const prevCountRef = useRef(0)
   useEffect(() => {
     if (autoScroll && scrollRef.current && packets.length > prevCountRef.current) {
@@ -65,7 +71,6 @@ export const PacketListPane: React.FC<Props> = ({
     prevCountRef.current = packets.length
   }, [packets.length, autoScroll])
 
-  // Keep selected packet scrolled into view when jumping from Security / Streams / keyboard
   useEffect(() => {
     if (selectedNo === null || !scrollRef.current) return
     const idx = packets.findIndex((p) => p.no === selectedNo)
@@ -78,7 +83,6 @@ export const PacketListPane: React.FC<Props> = ({
     }
   }, [selectedNo])
 
-  // Close context menu on click elsewhere
   useEffect(() => {
     const close = () => setCtxMenu(null)
     window.addEventListener('click', close)
@@ -95,19 +99,21 @@ export const PacketListPane: React.FC<Props> = ({
       {/* Pane Sub-Header */}
       <div className="flex items-center justify-between px-3 h-7 border-b border-slate-200 dark:border-slate-800/90 bg-slate-50 dark:bg-[#0f1520] text-[11px]">
         <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300 font-semibold">
-          <span>Packet List</span>
+          <span>{t.packetList}</span>
           <span className="font-mono-code font-normal text-slate-400">
-            {packets.length.toLocaleString()} / {totalCaptured.toLocaleString()} frames
+            {packets.length.toLocaleString()} / {totalCaptured.toLocaleString()} {t.frames}
+          </span>
+          <span className="hidden lg:inline text-[10px] font-normal text-slate-400">
+            （右键任意数据包可追踪流、查看时序图或一键进入「计网学习工坊」图解）
           </span>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setTimeMode((m) => (m === 'rel' ? 'delta' : 'rel'))}
             className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-slate-200/70 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-pointer"
-            title="Toggle Relative Time vs Delta Time"
           >
             <Clock className="w-3 h-3" />
-            <span>{timeMode === 'rel' ? 'Relative (s)' : 'Delta (ms)'}</span>
+            <span>{timeMode === 'rel' ? t.cols.time : t.cols.delta}</span>
           </button>
           <button
             onClick={onToggleAutoScroll}
@@ -116,24 +122,23 @@ export const PacketListPane: React.FC<Props> = ({
                 ? 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300'
                 : 'text-slate-500 hover:bg-slate-200/70 dark:hover:bg-slate-800'
             }`}
-            title="Auto-scroll on live capture"
           >
             <ArrowDownToLine className="w-3 h-3" />
-            <span>Auto-scroll</span>
+            <span>{t.autoScroll}</span>
           </button>
         </div>
       </div>
 
       {/* Column Headers */}
       <div className="grid grid-cols-[58px_82px_145px_145px_76px_58px_118px_1fr] items-center px-2 h-7 border-b border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-[#111827] text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0">
-        <div className="px-1">No.</div>
-        <div className="px-1">{timeMode === 'rel' ? 'Time' : 'Delta'}</div>
-        <div className="px-1">Source</div>
-        <div className="px-1">Destination</div>
-        <div className="px-1">Protocol</div>
-        <div className="px-1 text-right pr-2">Len</div>
-        <div className="px-1">Process</div>
-        <div className="px-1">Info</div>
+        <div className="px-1">{t.cols.no}</div>
+        <div className="px-1">{timeMode === 'rel' ? t.cols.time : t.cols.delta}</div>
+        <div className="px-1">{t.cols.src}</div>
+        <div className="px-1">{t.cols.dst}</div>
+        <div className="px-1">{t.cols.proto}</div>
+        <div className="px-1 text-right pr-2">{t.cols.len}</div>
+        <div className="px-1">{t.cols.proc}</div>
+        <div className="px-1">{t.cols.info}</div>
       </div>
 
       {/* Virtualized Table Viewport */}
@@ -145,7 +150,7 @@ export const PacketListPane: React.FC<Props> = ({
         {packets.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 text-xs gap-2 p-6">
             <Layers className="w-7 h-7 opacity-40" />
-            <span>No packets match the current display filter or capture is empty.</span>
+            <span>当前没有匹配过滤条件的数据包，或尚未开始捕获。</span>
           </div>
         ) : (
           <div style={{ height: totalH, position: 'relative' }}>
@@ -244,20 +249,31 @@ export const PacketListPane: React.FC<Props> = ({
         )}
       </div>
 
-      {/* Wireshark-Style Context Menu */}
+      {/* Context Menu */}
       {ctxMenu && (
         <div
           style={{
             position: 'fixed',
-            left: Math.min(ctxMenu.x, window.innerWidth - 260),
-            top: Math.min(ctxMenu.y, window.innerHeight - 280),
+            left: Math.min(ctxMenu.x, window.innerWidth - 270),
+            top: Math.min(ctxMenu.y, window.innerHeight - 310),
           }}
-          className="w-60 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#131b2e] shadow-2xl py-1.5 text-xs z-50"
+          className="w-64 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#131b2e] shadow-2xl py-1.5 text-xs z-50"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800">
-            Frame #{ctxMenu.pkt.no} · {ctxMenu.pkt.protocol}
+          <div className="px-3 py-1 text-[10px] font-semibold text-slate-400 border-b border-slate-100 dark:border-slate-800">
+            帧 #{ctxMenu.pkt.no} · {ctxMenu.pkt.protocol}
           </div>
+
+          <button
+            onClick={() => {
+              onOpenLearn(ctxMenu.pkt.no)
+              setCtxMenu(null)
+            }}
+            className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-semibold cursor-pointer"
+          >
+            <GraduationCap className="w-3.5 h-3.5" />
+            <span>{t.ctx.learnPacket}</span>
+          </button>
 
           {ctxMenu.pkt.streamId !== null && ctxMenu.pkt.streamProto && (
             <>
@@ -269,7 +285,9 @@ export const PacketListPane: React.FC<Props> = ({
                 className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-cyan-500/15 text-slate-800 dark:text-slate-100 cursor-pointer"
               >
                 <GitBranch className="w-3.5 h-3.5 text-cyan-500" />
-                <span>Follow {ctxMenu.pkt.streamProto.toUpperCase()} Stream #{ctxMenu.pkt.streamId}</span>
+                <span>
+                  {t.ctx.followStream} ({ctxMenu.pkt.streamProto.toUpperCase()} #{ctxMenu.pkt.streamId})
+                </span>
               </button>
               <button
                 onClick={() => {
@@ -279,7 +297,7 @@ export const PacketListPane: React.FC<Props> = ({
                 className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-cyan-500/15 text-slate-800 dark:text-slate-100 cursor-pointer"
               >
                 <Workflow className="w-3.5 h-3.5 text-emerald-500" />
-                <span>View Flow Sequence Diagram</span>
+                <span>{t.ctx.sequenceDiagram}</span>
               </button>
             </>
           )}
@@ -293,7 +311,9 @@ export const PacketListPane: React.FC<Props> = ({
               className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-cyan-500/15 text-slate-800 dark:text-slate-100 cursor-pointer"
             >
               <Cpu className="w-3.5 h-3.5 text-amber-500" />
-              <span>Trace Process: {ctxMenu.pkt.processName}</span>
+              <span>
+                {t.ctx.traceProcess}: {ctxMenu.pkt.processName}
+              </span>
             </button>
           )}
 
@@ -305,7 +325,7 @@ export const PacketListPane: React.FC<Props> = ({
             className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-violet-500/15 text-violet-700 dark:text-violet-300 cursor-pointer"
           >
             <Layers className="w-3.5 h-3.5" />
-            <span>Dissect via Wireshark libwireshark</span>
+            <span>{t.ctx.wsDissect}</span>
           </button>
 
           <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
@@ -318,7 +338,9 @@ export const PacketListPane: React.FC<Props> = ({
             className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 cursor-pointer"
           >
             <Filter className="w-3.5 h-3.5 text-sky-500" />
-            <span className="truncate">Filter: ip.addr == {ctxMenu.pkt.src}</span>
+            <span className="truncate">
+              {t.ctx.filterIp}: {ctxMenu.pkt.src}
+            </span>
           </button>
           <button
             onClick={() => {
@@ -328,7 +350,9 @@ export const PacketListPane: React.FC<Props> = ({
             className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 cursor-pointer"
           >
             <Filter className="w-3.5 h-3.5 text-rose-500" />
-            <span className="truncate">Exclude: not (ip.src == {ctxMenu.pkt.src})</span>
+            <span className="truncate">
+              {t.ctx.excludeIp}: {ctxMenu.pkt.src}
+            </span>
           </button>
         </div>
       )}

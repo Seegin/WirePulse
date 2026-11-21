@@ -67,20 +67,20 @@ export const AnalyticsView: React.FC<Props> = ({ onFilterIp, onFilterProto }) =>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f1520] p-4">
             <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>Captured Frames</span>
+              <span>已捕获数据帧</span>
               <Activity className="w-4 h-4 text-cyan-500" />
             </div>
             <div className="text-2xl font-bold font-mono-code text-slate-900 dark:text-white mt-1.5">
               {data.status.totalPackets.toLocaleString()}
             </div>
             <div className="text-[11px] text-slate-400 mt-1 font-mono-code">
-              Volume: {formatBytes(data.status.totalBytes)}
+              总字节量: {formatBytes(data.status.totalBytes)}
             </div>
           </div>
 
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f1520] p-4">
             <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>Tracked Flows</span>
+              <span>追踪通信流</span>
               <Network className="w-4 h-4 text-violet-500" />
             </div>
             <div className="text-2xl font-bold font-mono-code text-slate-900 dark:text-white mt-1.5">
@@ -93,27 +93,27 @@ export const AnalyticsView: React.FC<Props> = ({ onFilterIp, onFilterProto }) =>
 
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f1520] p-4">
             <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>Kernel Capture Drop Rate</span>
+              <span>内核捕获丢包率</span>
               <Gauge className="w-4 h-4 text-emerald-500" />
             </div>
             <div className="text-2xl font-bold font-mono-code text-emerald-600 dark:text-emerald-400 mt-1.5">
               {dropRate}%
             </div>
             <div className="text-[11px] text-slate-400 mt-1 font-mono-code">
-              Recv: {data.status.kernelStats.recv} · Drop: {data.status.kernelStats.drop}
+              接收: {data.status.kernelStats.recv} · 丢弃: {data.status.kernelStats.drop}
             </div>
           </div>
 
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f1520] p-4">
             <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>IDS Security Alerts</span>
+              <span>安全 IDS 告警</span>
               <ShieldAlert className="w-4 h-4 text-rose-500" />
             </div>
             <div className="text-2xl font-bold font-mono-code text-rose-600 dark:text-rose-400 mt-1.5">
               {data.status.alerts.TOTAL}
             </div>
             <div className="text-[11px] text-slate-400 mt-1 font-mono-code">
-              {data.status.alerts.CRITICAL} Crit · {data.status.alerts.HIGH} High · {data.status.alerts.MEDIUM} Med
+              {data.status.alerts.CRITICAL} 严重 · {data.status.alerts.HIGH} 高危 · {data.status.alerts.MEDIUM} 中危
             </div>
           </div>
         </div>
@@ -126,14 +126,14 @@ export const AnalyticsView: React.FC<Props> = ({ onFilterIp, onFilterProto }) =>
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <Globe className="w-4 h-4 text-cyan-500" />
-                  Network Communication Topology
+                  交互式网络通信拓扑图
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Click any host node to filter its traffic; red-ringed hosts triggered Security IDS alerts
+                  点击任意主机节点即可筛选其通信流量；带红色虚线外环的主机触发了安全 IDS 告警
                 </p>
               </div>
               <span className="text-[11px] font-mono-code text-slate-400">
-                {nodes.length} hosts · {data.topology.edges.length} links
+                {nodes.length} 台主机 · {data.topology.edges.length} 条通信链路
               </span>
             </div>
 
@@ -226,10 +226,10 @@ export const AnalyticsView: React.FC<Props> = ({ onFilterIp, onFilterProto }) =>
             <div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-violet-500" />
-                Protocol Distribution
+                协议分布占比
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Click any protocol bar to filter Packet List
+                点击任意协议柱状条立即筛选对应数据包
               </p>
             </div>
 

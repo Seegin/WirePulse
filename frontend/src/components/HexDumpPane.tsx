@@ -67,16 +67,16 @@ export const HexDumpPane: React.FC<Props> = ({
       <div className="flex items-center justify-between px-3 h-8 border-b border-slate-200 dark:border-slate-800/90 bg-slate-50 dark:bg-[#0f1520] text-[11px] shrink-0 gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <Binary className="w-3.5 h-3.5 text-cyan-500 shrink-0" />
-          <span className="font-semibold text-slate-700 dark:text-slate-200 shrink-0">Packet Bytes</span>
-          <span className="font-mono-code text-slate-400 shrink-0">{bytes.length} bytes</span>
+          <span className="font-semibold text-slate-700 dark:text-slate-200 shrink-0">原始字节视图</span>
+          <span className="font-mono-code text-slate-400 shrink-0">{bytes.length} 字节</span>
           {highlight && highlight.length > 0 && (
             <span className="hidden md:inline-block px-1.5 py-0 rounded bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 font-mono-code text-[10px] truncate">
-              Selected: 0x{highlight.offset.toString(16).padStart(4, '0')} ({highlight.length}B)
+              选中: 0x{highlight.offset.toString(16).padStart(4, '0')} ({highlight.length}B)
             </span>
           )}
           {selByte !== null && selectedByteOffset !== null && (
             <span className="hidden lg:inline-block font-mono-code text-[10px] text-slate-500 dark:text-slate-400">
-              Byte[{selectedByteOffset}] = 0x{selByte.toString(16).padStart(2, '0')} ({selByte}) 0b
+              字节[{selectedByteOffset}] = 0x{selByte.toString(16).padStart(2, '0')} ({selByte}) 0b
               {selByte.toString(2).padStart(8, '0')}
             </span>
           )}

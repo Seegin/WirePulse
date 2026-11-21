@@ -45,14 +45,14 @@ export const ProcessView: React.FC<Props> = ({
             <div className="flex items-center gap-2">
               <Cpu className="w-5 h-5 text-amber-500" />
               <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                OS Process Traffic Tracing
+                操作系统进程级流量追踪（OS Process Tracing）
               </h2>
               <span className="text-[11px] font-mono-code px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
-                {processes.length} active processes
+                {processes.length} 个活跃进程
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Maps live TCP/UDP 5-tuple sockets to OS PIDs via Linux <code className="font-mono-code">/proc/net/*</code> + inode tables &amp; Windows <code className="font-mono-code">iphlpapi / netstat</code> — solving a classic Wireshark gap.
+              通过 Linux <code className="font-mono-code">/proc/net/*</code> Socket Inode 与 Windows 连接表，将每条 TCP/UDP 流量精准归因到发起通信的操作系统进程 PID，一键追踪某个程序产生的全部网络流。
             </p>
           </div>
 
@@ -60,14 +60,14 @@ export const ProcessView: React.FC<Props> = ({
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search process name, PID, cmdline..."
+              placeholder="搜索进程名、PID 或命令行..."
               className="h-8 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#111827] text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-cyan-500 w-64"
             />
             <button
               onClick={load}
               className="flex items-center gap-1.5 px-3 h-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#111827] hover:border-cyan-500 text-xs text-slate-600 dark:text-slate-300 cursor-pointer"
             >
-              <RefreshCw className="w-3.5 h-3.5" /> Refresh
+              <RefreshCw className="w-3.5 h-3.5" /> 刷新
             </button>
           </div>
         </div>
@@ -83,13 +83,13 @@ export const ProcessView: React.FC<Props> = ({
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#111827] text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                    <th className="py-2.5 px-3.5">Process &amp; PID</th>
-                    <th className="py-2.5 px-3">Protocols</th>
-                    <th className="py-2.5 px-3 text-right">Streams</th>
-                    <th className="py-2.5 px-3 text-right">Packets (Out / In)</th>
-                    <th className="py-2.5 px-3 text-right">Volume (Out / In)</th>
-                    <th className="py-2.5 px-3">Remote Endpoints</th>
-                    <th className="py-2.5 px-3.5 text-right">Actions</th>
+                    <th className="py-2.5 px-3.5">进程名称与 PID</th>
+                    <th className="py-2.5 px-3">使用协议</th>
+                    <th className="py-2.5 px-3 text-right">流数量</th>
+                    <th className="py-2.5 px-3 text-right">收发包数 (发 / 收)</th>
+                    <th className="py-2.5 px-3 text-right">流量体积 (发 / 收)</th>
+                    <th className="py-2.5 px-3">通信对端地址</th>
+                    <th className="py-2.5 px-3.5 text-right">操作</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
@@ -170,14 +170,14 @@ export const ProcessView: React.FC<Props> = ({
                             className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-medium cursor-pointer whitespace-nowrap"
                           >
                             <GitBranch className="w-3 h-3 shrink-0" />
-                            <span>All Streams</span>
+                            <span>追踪全部流</span>
                           </button>
                           <button
                             onClick={() => onFilterProcessPackets(p.pid, p.name)}
                             className="flex items-center gap-1 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 hover:border-cyan-500 text-slate-700 dark:text-slate-200 text-[11px] font-medium cursor-pointer whitespace-nowrap"
                           >
                             <Filter className="w-3 h-3 shrink-0" />
-                            <span>Packets</span>
+                            <span>筛选数据包</span>
                           </button>
                         </div>
                       </td>

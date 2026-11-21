@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  AlertCircle,
+  CheckCircle2,
   Download,
   Filter,
   FolderOpen,
+  Languages,
   Moon,
   Pause,
   Play,
@@ -12,14 +15,16 @@ import {
   Square,
   Sun,
   Trash2,
+  Wand2,
   X,
-  CheckCircle2,
-  AlertCircle,
 } from 'lucide-react'
 import { api } from '../api'
 import type { FilterFieldCatalogItem, NavTab, SessionStatus } from '../types'
+import { UI_TEXT, type Lang } from '../utils/i18n'
 
 interface Props {
+  lang: Lang
+  onToggleLang: () => void
   status: SessionStatus
   activeTab: NavTab
   dark: boolean
@@ -39,26 +44,27 @@ interface Props {
 }
 
 const QUICK_FILTERS = [
-  { label: 'All', expr: '' },
-  { label: 'HTTP', expr: 'http' },
-  { label: 'TLS', expr: 'tls' },
-  { label: 'DNS', expr: 'dns' },
-  { label: 'TCP', expr: 'tcp' },
-  { label: 'UDP', expr: 'udp' },
-  { label: 'ARP', expr: 'arp' },
-  { label: 'ICMP', expr: 'icmp || icmpv6' },
-  { label: 'Alerts', expr: 'alert', danger: true },
-  { label: 'Retrans', expr: 'tcp.analysis.retransmission || tcp.flags.rst' },
+  { id: 'All' as const, expr: '' },
+  { id: 'HTTP' as const, expr: 'http' },
+  { id: 'TLS' as const, expr: 'tls' },
+  { id: 'DNS' as const, expr: 'dns' },
+  { id: 'TCP' as const, expr: 'tcp' },
+  { id: 'UDP' as const, expr: 'udp' },
+  { id: 'ARP' as const, expr: 'arp' },
+  { id: 'ICMP' as const, expr: 'icmp || icmpv6' },
+  { id: 'Alerts' as const, expr: 'alert', danger: true },
+  { id: 'Retrans' as const, expr: 'tcp.analysis.retransmission || tcp.flags.rst' },
 ]
 
 export const TopToolbar: React.FC<Props> = ({
+  lang,
+  onToggleLang,
   status,
   activeTab,
   dark,
   onToggleTheme,
   filterExpr,
   appliedFilter,
-  filterAst,
   filterError,
   onFilterExprChange,
   onApplyFilter,
@@ -69,9 +75,19 @@ export const TopToolbar: React.FC<Props> = ({
   onImportPcap,
   onNavigate,
 }) => {
+  const t = UI_TEXT[lang]
   const fileRef = useRef<HTMLInputElement>(null)
   const [catalog, setCatalog] = useState<FilterFieldCatalogItem[]>([])
   const [showSuggest, setShowSuggest] = useState(false)
+  const [showWizard, setShowWizard] = useState(false)
+
+  // Visual Filter Wizard State (for beginners!)
+  const [wizProtos, setWizProtos] = useState<string[]>([])
+  const [wizIp, setWizIp] = useState('')
+  const [wizPort, setWizPort] = useState('')
+  const [wizProc, setWizProc] = useState('')
+  const [wizAlertOnly, setWizAlertOnly] = useState(false)
+
   const [liveValid, setLiveValid] = useState<{ valid: boolean; ast: string | null; error: string | null }>({
     valid: true,
     ast: 'ALL',
@@ -82,7 +98,6 @@ export const TopToolbar: React.FC<Props> = ({
     api.getFilterFields().then((r) => setCatalog(r.fields || [])).catch(() => {})
   }, [])
 
-  // Live syntax validation with short debounce
   useEffect(() => {
     const trimmed = filterExpr.trim()
     if (!trimmed) {
@@ -107,6 +122,19 @@ export const TopToolbar: React.FC<Props> = ({
       .slice(0, 8)
   }, [filterExpr, catalog])
 
+  const wizardBuiltExpr = useMemo(() => {
+    const clauses: string[] = []
+    if (wizProtos.length === 1) clauses.push(wizProtos[0])
+    else if (wizProtos.length > 1) clauses.push(`(${wizProtos.join(' || ')})`)
+    if (wizIp.trim()) clauses.push(`ip.addr == ${wizIp.trim()}`)
+    if (wizPort.trim() && /^\d+$/.test(wizPort.trim())) {
+      clauses.push(`(tcp.port == ${wizPort.trim()} || udp.port == ${wizPort.trim()})`)
+    }
+    if (wizProc.trim()) clauses.push(`proc.name contains "${wizProc.trim()}"`)
+    if (wizAlertOnly) clauses.push('alert')
+    return clauses.join(' && ')
+  }, [wizProtos, wizIp, wizPort, wizProc, wizAlertOnly])
+
   const insertSuggestion = (field: string) => {
     const match = filterExpr.match(/^(.*?)([A-Za-z0-9_.]*)$/)
     const prefix = match ? match[1] : ''
@@ -116,17 +144,16 @@ export const TopToolbar: React.FC<Props> = ({
 
   return (
     <header className="flex flex-col border-b border-slate-200 dark:border-slate-800/90 bg-white/95 dark:bg-[#0d131f]/95 backdrop-blur-md z-30 select-none">
-      {/* Row 1: Brand + Capture Controls + Theme */}
+      {/* Row 1: Brand + Capture Controls + Language + Theme */}
       <div className="flex items-center justify-between h-12 px-3.5 gap-3">
         {/* Brand Logo */}
         <div className="flex items-center gap-2.5 shrink-0">
           <button
             onClick={() => onNavigate('capture')}
-            className="flex items-center gap-2.5 group focus:outline-none"
-            title="WirePulse Capture Hub"
+            className="flex items-center gap-2.5 group focus:outline-none cursor-pointer"
+            title="WirePulse 捕获中心"
           >
             <div className="relative w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 via-sky-500 to-indigo-600 flex items-center justify-center shadow-md shadow-cyan-500/20 group-hover:scale-105 transition-transform">
-              {/* Custom Shark Fin + Telemetry Pulse SVG */}
               <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="none">
                 <path
                   d="M3 16.5H7.2L9.5 11.5L12.5 17.5L15 6C17.2 8.2 18.8 11.8 19.2 16.5H21"
@@ -143,16 +170,14 @@ export const TopToolbar: React.FC<Props> = ({
                   Wire<span className="text-cyan-600 dark:text-cyan-400">Pulse</span>
                 </span>
                 <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30">
-                  PRO
+                  EDU PRO
                 </span>
               </div>
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                Packet Sniffer &amp; Security NPA
-              </span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">{t.subtitle}</span>
             </div>
           </button>
 
-          <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 mx-1" />
+          <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 mx-1 hidden md:block" />
 
           {/* Live Capture Status Pill */}
           <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 text-xs">
@@ -165,12 +190,12 @@ export const TopToolbar: React.FC<Props> = ({
                   : 'bg-slate-400 dark:bg-slate-600'
               }`}
             />
-            <span className="font-medium text-slate-700 dark:text-slate-200 max-w-[260px] truncate">
+            <span className="font-medium text-slate-700 dark:text-slate-200 max-w-[240px] truncate">
               {status.capturing
                 ? status.paused
-                  ? `Paused · ${status.interface}`
-                  : `Capturing · ${status.interface}`
-                : status.interface || 'Ready to Capture'}
+                  ? `${t.paused} · ${status.interface}`
+                  : `${t.capturing} · ${status.interface}`
+                : status.interface || t.ready}
             </span>
           </div>
         </div>
@@ -181,10 +206,9 @@ export const TopToolbar: React.FC<Props> = ({
             <button
               onClick={() => onNavigate('capture')}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-cyan-600 hover:bg-cyan-500 text-white shadow-sm shadow-cyan-500/20 transition-colors cursor-pointer"
-              title="Select Network Interface & Start Live Capture"
             >
               <Radio className="w-3.5 h-3.5" />
-              <span>New Capture</span>
+              <span>{t.newCapture}</span>
             </button>
           ) : (
             <>
@@ -195,18 +219,16 @@ export const TopToolbar: React.FC<Props> = ({
                     ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500'
                     : 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border-amber-500/40'
                 }`}
-                title={status.paused ? 'Resume Capture' : 'Pause Capture'}
               >
                 {status.paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
-                <span>{status.paused ? 'Resume' : 'Pause'}</span>
+                <span>{status.paused ? t.resume : t.pause}</span>
               </button>
               <button
                 onClick={onStopCapture}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-rose-600 hover:bg-rose-500 text-white shadow-sm transition-colors cursor-pointer"
-                title="Stop Live Capture"
               >
                 <Square className="w-3.5 h-3.5 fill-current" />
-                <span>Stop</span>
+                <span>{t.stop}</span>
               </button>
             </>
           )}
@@ -214,10 +236,9 @@ export const TopToolbar: React.FC<Props> = ({
           <button
             onClick={() => onLoadDemo(false)}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-violet-500/12 hover:bg-violet-500/20 text-violet-700 dark:text-violet-300 border border-violet-500/30 transition-colors cursor-pointer"
-            title="Load Multi-Protocol & Security Incident Lab Capture"
           >
             <Sparkles className="w-3.5 h-3.5" />
-            <span>Security Demo</span>
+            <span>{t.demoBtn}</span>
           </button>
 
           <div className="h-5 w-px bg-slate-200 dark:bg-slate-800 mx-0.5" />
@@ -236,10 +257,9 @@ export const TopToolbar: React.FC<Props> = ({
           <button
             onClick={() => fileRef.current?.click()}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700/80 transition-colors cursor-pointer"
-            title="Import .pcap / .pcapng file"
           >
             <FolderOpen className="w-3.5 h-3.5 text-sky-500" />
-            <span className="hidden sm:inline">Open PCAP</span>
+            <span className="hidden sm:inline">{t.openPcap}</span>
           </button>
 
           <a
@@ -250,34 +270,57 @@ export const TopToolbar: React.FC<Props> = ({
                 ? 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-700/80'
                 : 'opacity-40 pointer-events-none border-slate-200 dark:border-slate-800 text-slate-400'
             }`}
-            title="Export captured/filtered packets as standard Wireshark .pcap"
           >
             <Download className="w-3.5 h-3.5 text-emerald-500" />
-            <span className="hidden sm:inline">Export</span>
+            <span className="hidden sm:inline">{t.exportPcap}</span>
           </a>
 
           <button
             onClick={onClearCapture}
             className="p-1.5 rounded-md text-slate-500 hover:text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
-            title="Clear current capture buffer"
+            title={t.clearTip}
           >
             <Trash2 className="w-4 h-4" />
+          </button>
+
+          {/* Language Switcher: 中文学习版 <-> English Pro */}
+          <button
+            onClick={onToggleLang}
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold border border-slate-200 dark:border-slate-700 bg-slate-100/80 dark:bg-slate-900 hover:border-cyan-500 text-slate-700 dark:text-slate-200 cursor-pointer"
+            title="切换中文学习界面 / Switch to English"
+          >
+            <Languages className="w-3.5 h-3.5 text-cyan-500" />
+            <span>{lang === 'zh' ? '中文' : 'EN'}</span>
           </button>
 
           <button
             onClick={onToggleTheme}
             className="p-1.5 rounded-md text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            title={dark ? 'Switch to Daylight Light Theme' : 'Switch to Obsidian Dark Theme'}
+            title={dark ? '切换浅色主题' : '切换深色主题'}
           >
             {dark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-500" />}
           </button>
         </div>
       </div>
 
-      {/* Row 2: Wireshark Display Filter Bar (visible on Packets tab or whenever filter is active) */}
+      {/* Row 2: Wireshark Display Filter Bar + Beginner Chinese Filter Wizard */}
       {(activeTab === 'packets' || appliedFilter) && (
-        <div className="flex flex-wrap items-center gap-2 px-3.5 py-1.5 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#0a0f18]">
-          <div className="relative flex-1 min-w-[280px]">
+        <div className="relative flex flex-wrap items-center gap-2 px-3.5 py-1.5 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#0a0f18]">
+          {/* Beginner Visual Filter Builder Trigger */}
+          <button
+            onClick={() => setShowWizard((v) => !v)}
+            className={`flex items-center gap-1 px-2.5 h-8 rounded-md text-[11px] font-semibold border transition-colors cursor-pointer shrink-0 ${
+              showWizard
+                ? 'bg-violet-600 text-white border-violet-500'
+                : 'bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-500/30 hover:bg-violet-500/20'
+            }`}
+            title="不用死记语法！通过中文勾选自动生成 Wireshark 过滤表达式"
+          >
+            <Wand2 className="w-3.5 h-3.5" />
+            <span>{t.filterWizard}</span>
+          </button>
+
+          <div className="relative flex-1 min-w-[260px]">
             <div
               className={`flex items-center gap-2 px-2.5 h-8 rounded-md border transition-all bg-white dark:bg-[#111827] ${
                 !liveValid.valid || filterError
@@ -300,7 +343,7 @@ export const TopToolbar: React.FC<Props> = ({
                     onApplyFilter(filterExpr)
                   }
                 }}
-                placeholder='Apply Display Filter... e.g. (http or dns) && ip.src == 10.212.5.0/24  |  proc.name == "chrome.exe"  |  alert'
+                placeholder={t.filterPlaceholder}
                 className="flex-1 bg-transparent text-xs font-mono-code text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none"
               />
               {filterExpr && (
@@ -310,7 +353,7 @@ export const TopToolbar: React.FC<Props> = ({
                     onApplyFilter('')
                   }}
                   className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                  title="Clear filter"
+                  title="清空过滤"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -318,8 +361,8 @@ export const TopToolbar: React.FC<Props> = ({
               {liveValid.valid ? (
                 filterExpr.trim() && (
                   <span
-                    className="hidden md:flex items-center gap-1 text-[10px] font-mono-code px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 max-w-[220px] truncate"
-                    title={`Parsed AST: ${liveValid.ast}`}
+                    className="hidden md:flex items-center gap-1 text-[10px] font-mono-code px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 max-w-[210px] truncate"
+                    title={`AST 逻辑树: ${liveValid.ast}`}
                   >
                     <CheckCircle2 className="w-3 h-3 shrink-0" />
                     <span className="truncate">{liveValid.ast}</span>
@@ -327,7 +370,7 @@ export const TopToolbar: React.FC<Props> = ({
                 )
               ) : (
                 <span
-                  className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-600 dark:text-rose-300 max-w-[240px] truncate"
+                  className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-600 dark:text-rose-300 max-w-[230px] truncate"
                   title={liveValid.error || ''}
                 >
                   <AlertCircle className="w-3 h-3 shrink-0" />
@@ -337,18 +380,18 @@ export const TopToolbar: React.FC<Props> = ({
               <button
                 onClick={() => onApplyFilter(filterExpr)}
                 disabled={!liveValid.valid}
-                className="px-2.5 py-0.5 rounded text-[11px] font-semibold bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white transition-colors cursor-pointer"
+                className="px-2.5 py-0.5 rounded text-[11px] font-semibold bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white transition-colors cursor-pointer shrink-0"
               >
-                Apply
+                {t.apply}
               </button>
             </div>
 
             {/* Autocomplete Dropdown */}
             {showSuggest && suggestions.length > 0 && (
               <div className="absolute left-0 right-0 top-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#121a2b] shadow-xl overflow-hidden z-50">
-                <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 flex justify-between">
-                  <span>Display Filter Fields (Logical ops: &amp;&amp;, ||, !, ==, !=, contains, matches, in &#123;...&#125;)</span>
-                  <span>Click to insert</span>
+                <div className="px-2.5 py-1 text-[10px] font-semibold text-slate-400 border-b border-slate-100 dark:border-slate-800 flex justify-between">
+                  <span>支持逻辑演算：&amp;&amp; (且), || (或), ! (非), ==, !=, contains, matches, in &#123;...&#125;</span>
+                  <span>点击插入字段</span>
                 </div>
                 {suggestions.map((s) => (
                   <button
@@ -382,7 +425,7 @@ export const TopToolbar: React.FC<Props> = ({
               const active = appliedFilter === qf.expr
               return (
                 <button
-                  key={qf.label}
+                  key={qf.id}
                   onClick={() => {
                     onFilterExprChange(qf.expr)
                     onApplyFilter(qf.expr)
@@ -398,11 +441,123 @@ export const TopToolbar: React.FC<Props> = ({
                   }`}
                 >
                   {qf.danger && <ShieldAlert className="w-3 h-3 inline mr-1 -mt-0.5" />}
-                  {qf.label}
+                  {t.quickFilters[qf.id]}
                 </button>
               )
             })}
           </div>
+
+          {/* Beginner Chinese Visual Filter Builder Popover */}
+          {showWizard && (
+            <div className="absolute left-3.5 top-11 w-[520px] max-w-[94vw] rounded-xl border border-violet-500/40 bg-white dark:bg-[#121a2c] shadow-2xl p-4 z-50 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <Wand2 className="w-3.5 h-3.5 text-violet-500" />
+                    中文可视化过滤向导（边用边学 Wireshark 逻辑表达式）
+                  </h4>
+                  <p className="text-[11px] text-slate-500">勾选想筛选的条件，系统自动拼出标准的逻辑过滤语句</p>
+                </div>
+                <button onClick={() => setShowWizard(false)} className="text-slate-400 hover:text-slate-200 cursor-pointer">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="text-[11px] font-semibold text-slate-500">1. 选择协议类型（可多选，自动以 || 逻辑或连接）</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {['http', 'tls', 'dns', 'tcp', 'udp', 'arp', 'icmp', 'quic', 'ssh', 'ftp'].map((p) => {
+                    const checked = wizProtos.includes(p)
+                    return (
+                      <button
+                        key={p}
+                        onClick={() =>
+                          setWizProtos((prev) => (checked ? prev.filter((x) => x !== p) : [...prev, p]))
+                        }
+                        className={`px-2 py-0.5 rounded text-[11px] font-mono-code font-semibold border cursor-pointer ${
+                          checked
+                            ? 'bg-cyan-600 text-white border-cyan-500'
+                            : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        {p.toUpperCase()}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="text-[10.5px] text-slate-500 block mb-1">2. 主机 IP / 网段</label>
+                  <input
+                    value={wizIp}
+                    onChange={(e) => setWizIp(e.target.value)}
+                    placeholder="如 10.212.5.0/24"
+                    className="w-full h-7 px-2 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#090d14] text-xs font-mono-code text-slate-800 dark:text-slate-100"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10.5px] text-slate-500 block mb-1">3. 端口号 (TCP/UDP)</label>
+                  <input
+                    value={wizPort}
+                    onChange={(e) => setWizPort(e.target.value)}
+                    placeholder="如 80 / 443 / 53"
+                    className="w-full h-7 px-2 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#090d14] text-xs font-mono-code text-slate-800 dark:text-slate-100"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10.5px] text-slate-500 block mb-1">4. 所属进程名</label>
+                  <input
+                    value={wizProc}
+                    onChange={(e) => setWizProc(e.target.value)}
+                    placeholder="如 chrome / nmap"
+                    className="w-full h-7 px-2 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#090d14] text-xs font-mono-code text-slate-800 dark:text-slate-100"
+                  />
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2 text-xs text-rose-600 dark:text-rose-400 font-medium cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={wizAlertOnly}
+                  onChange={(e) => setWizAlertOnly(e.target.checked)}
+                  className="accent-rose-500"
+                />
+                <span>仅显示触发安全 IDS 告警的可疑数据包 (alert)</span>
+              </label>
+
+              <div className="p-2.5 rounded-lg bg-slate-900 text-cyan-300 font-mono-code text-[11.5px] border border-slate-800">
+                <span className="text-slate-500 mr-2">生成的表达式 &gt;</span>
+                {wizardBuiltExpr || '(全部数据包)'}
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => {
+                    setWizProtos([])
+                    setWizIp('')
+                    setWizPort('')
+                    setWizProc('')
+                    setWizAlertOnly(false)
+                  }}
+                  className="px-3 py-1 rounded-md border border-slate-200 dark:border-slate-700 text-xs text-slate-500 cursor-pointer"
+                >
+                  重置
+                </button>
+                <button
+                  onClick={() => {
+                    onFilterExprChange(wizardBuiltExpr)
+                    onApplyFilter(wizardBuiltExpr)
+                    setShowWizard(false)
+                  }}
+                  className="px-4 py-1 rounded-md bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold cursor-pointer"
+                >
+                  填入并立即过滤
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </header>

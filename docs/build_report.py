@@ -208,8 +208,11 @@ def build_html(md_text: str) -> str:
             if not inserted_arch:
                 html_parts.append(f'<figure class="fig">{ARCH_SVG}<figcaption>图 1：WirePulse 三层混合架构与 Wireshark 增量协同数据流图</figcaption></figure>')
                 inserted_arch = True
+                fig_num = 2
+            else:
+                fig_num = 3
             html_parts.append(
-                f'<figure class="fig"><img src="file://{abs_img}" alt="{alt}"/><figcaption>图 2：{alt}（Obsidian 深色主题，含 OS 进程归因、IDS 告警标记与双向 Hex 高亮）</figcaption></figure>'
+                f'<figure class="fig"><img src="file://{abs_img}" alt="{alt}"/><figcaption>图 {fig_num}：{alt}</figcaption></figure>'
             )
             continue
 

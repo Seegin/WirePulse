@@ -99,8 +99,8 @@ export const StreamView: React.FC<Props> = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <GitBranch className="w-4 h-4 text-cyan-500" />
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">
-                TCP / UDP Flows ({streams.length})
+              <h2 className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                TCP / UDP 通信流 ({streams.length})
               </h2>
             </div>
             <div className="flex rounded-md border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 p-0.5 text-[10.5px]">
@@ -248,7 +248,7 @@ export const StreamView: React.FC<Props> = ({
                     }`}
                   >
                     <GitBranch className="w-3.5 h-3.5" />
-                    <span>Follow Stream</span>
+                    <span>流内容重组 (Follow)</span>
                   </button>
                   <button
                     onClick={() => setSubTab('sequence')}
@@ -259,7 +259,7 @@ export const StreamView: React.FC<Props> = ({
                     }`}
                   >
                     <Workflow className="w-3.5 h-3.5" />
-                    <span>Flow Sequence Diagram</span>
+                    <span>交互式流时序图</span>
                   </button>
                 </div>
 
@@ -268,10 +268,10 @@ export const StreamView: React.FC<Props> = ({
                     onApplyFilter(`${followData.summary.proto}.stream == ${followData.summary.streamId}`)
                   }
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-cyan-500 text-xs font-medium text-slate-700 dark:text-slate-200 cursor-pointer"
-                  title="Filter Packet List to this stream"
+                  title="在报文三栏中只看该流"
                 >
                   <Filter className="w-3.5 h-3.5 text-cyan-500" />
-                  <span>Filter Stream</span>
+                  <span>过滤此流</span>
                 </button>
               </div>
             </div>
@@ -382,17 +382,17 @@ export const StreamView: React.FC<Props> = ({
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                        Interactive Flow Sequence / Ladder Diagram
+                        交互式网络流时序图（Flow Sequence Ladder Diagram）
                       </h4>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                        Click any packet arrow to jump directly to its OSI dissection in the 3-pane browser
+                        直观展示客户端与服务端之间的三次握手、数据交互、RTT 往返延迟、超时重传与四次挥手；点击任意箭头直达该帧
                       </p>
                     </div>
                     <div className="flex items-center gap-3 text-[10.5px]">
-                      <span className="flex items-center gap-1 text-cyan-500">● SYN/FIN</span>
-                      <span className="flex items-center gap-1 text-emerald-500">● Payload Data</span>
-                      <span className="flex items-center gap-1 text-amber-500">● Retransmission</span>
-                      <span className="flex items-center gap-1 text-rose-500">● RST</span>
+                      <span className="flex items-center gap-1 text-cyan-500">● 握手/挥手</span>
+                      <span className="flex items-center gap-1 text-emerald-500">● 业务数据</span>
+                      <span className="flex items-center gap-1 text-amber-500">● 重传/乱序</span>
+                      <span className="flex items-center gap-1 text-rose-500">● RST重置</span>
                     </div>
                   </div>
 

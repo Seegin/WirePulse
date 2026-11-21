@@ -97,13 +97,12 @@ export const WiresharkLabView: React.FC<Props> = ({
               <div className="flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-violet-500" />
                 <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                  Wireshark Incremental Integration Lab
+                  Wireshark 增量扩展实验室
                 </h2>
               </div>
               <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 max-w-3xl">
-                WirePulse reuses and extends Wireshark&apos;s ecosystem: live <code className="font-mono-code">libwireshark (sharkd)</code> 3,000+ protocol dissection,
-                <code className="font-mono-code"> dumpcap</code> Npcap capture bridge, <code className="font-mono-code">SSLKEYLOGFILE</code> TLS 1.2/1.3 decryption,
-                and bidirectional custom Wireshark Lua plugin generation.
+                深度复用并扩展 Wireshark 生态：支持 <code className="font-mono-code">libwireshark (sharkd)</code> 3,000+ 协议双引擎解码、
+                <code className="font-mono-code">SSLKEYLOGFILE</code> 解密 HTTPS/TLS 1.2 &amp; 1.3，以及可视化设计自定义二进制协议并一键导出上游 Wireshark <code className="font-mono-code">.lua</code> 插件。
               </p>
             </div>
             <div className="flex items-center gap-2 text-xs font-mono-code">

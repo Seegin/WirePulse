@@ -73,11 +73,11 @@ export const SecurityView: React.FC<Props> = ({ onJumpToPacket, onFollowStream }
             <div className="flex items-center gap-2">
               <ShieldAlert className="w-5 h-5 text-rose-500" />
               <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                Real-Time Security IDS &amp; Threat Radar
+                实时网络安全 IDS 威胁雷达
               </h2>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Stateful packet inspection detecting ARP Spoofing, TCP Port/Stealth Scans, SYN Floods, Cleartext Credential Leaks, SQLi/XSS/Path Traversal, DNS Tunneling, and Weak TLS Cryptography.
+              有状态检测 ARP 欺骗、TCP 端口/隐蔽扫描、SYN 泛洪、明文账号密码泄露、SQL 注入/XSS/路径穿越、高熵 DNS 隧道与弱 TLS 加密套件；点击任意告警直达取证帧。
             </p>
           </div>
         </div>
@@ -85,11 +85,11 @@ export const SecurityView: React.FC<Props> = ({ onJumpToPacket, onFollowStream }
         {/* Severity KPI Filter Cards */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {([
-            { key: 'ALL', label: 'Total Alerts', val: counts.TOTAL, accent: 'border-cyan-500/40 text-cyan-600 dark:text-cyan-400' },
-            { key: 'CRITICAL', label: 'Critical', val: counts.CRITICAL, accent: 'border-rose-500/40 text-rose-600 dark:text-rose-400' },
-            { key: 'HIGH', label: 'High', val: counts.HIGH, accent: 'border-orange-500/40 text-orange-600 dark:text-orange-400' },
-            { key: 'MEDIUM', label: 'Medium', val: counts.MEDIUM, accent: 'border-amber-500/40 text-amber-600 dark:text-amber-400' },
-            { key: 'LOW', label: 'Low', val: counts.LOW, accent: 'border-sky-500/40 text-sky-600 dark:text-sky-400' },
+            { key: 'ALL', label: '全部告警', val: counts.TOTAL, accent: 'border-cyan-500/40 text-cyan-600 dark:text-cyan-400' },
+            { key: 'CRITICAL', label: '严重 (Critical)', val: counts.CRITICAL, accent: 'border-rose-500/40 text-rose-600 dark:text-rose-400' },
+            { key: 'HIGH', label: '高危 (High)', val: counts.HIGH, accent: 'border-orange-500/40 text-orange-600 dark:text-orange-400' },
+            { key: 'MEDIUM', label: '中危 (Medium)', val: counts.MEDIUM, accent: 'border-amber-500/40 text-amber-600 dark:text-amber-400' },
+            { key: 'LOW', label: '低危 (Low)', val: counts.LOW, accent: 'border-sky-500/40 text-sky-600 dark:text-sky-400' },
           ] as const).map((card) => (
             <button
               key={card.key}

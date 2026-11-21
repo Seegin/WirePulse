@@ -1,4 +1,4 @@
-export type NavTab = 'capture' | 'packets' | 'streams' | 'processes' | 'security' | 'analytics' | 'wireshark'
+export type NavTab = 'capture' | 'packets' | 'learn' | 'streams' | 'processes' | 'security' | 'analytics' | 'wireshark'
 
 export interface InterfaceInfo {
   id: string
